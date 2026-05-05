@@ -1,114 +1,116 @@
 import { Navigation } from "@/components/navigation"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { Check, Sparkles, Zap, Shield, Users } from "lucide-react"
+import { Footer } from "@/components/footer"
 
 export default function HomePage() {
-  const features = [
-    {
-      icon: Zap,
-      title: "Lightning Fast",
-      description: "Built on Next.js 16 with React 19 for optimal performance and developer experience.",
-    },
-    {
-      icon: Shield,
-      title: "Secure by Default",
-      description: "Supabase Auth with Row Level Security ensures your data stays protected.",
-    },
-    {
-      icon: Users,
-      title: "User Management",
-      description: "Complete authentication flows including sign up, sign in, and profile management.",
-    },
-    {
-      icon: Sparkles,
-      title: "Subscription Tiers",
-      description: "Built-in free and pro tier system with gated features and upgrade flows.",
-    },
-  ]
-
   return (
-    <div className="min-h-screen bg-background">
+    <main
+      className="flex flex-col min-h-screen relative overflow-hidden"
+      style={{ background: "var(--color-ink)", color: "var(--color-text)" }}
+    >
+      {/* faint grid background */}
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-50 pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(var(--color-line) 1px, transparent 1px), linear-gradient(90deg, var(--color-line) 1px, transparent 1px)",
+          backgroundSize: "120px 120px",
+        }}
+      />
+
       <Navigation />
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden min-h-[80vh] flex items-center">
-        <div className="container mx-auto px-6 py-16">
-          <div className="max-w-4xl mx-auto text-center space-y-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium">
-              <Sparkles className="w-4 h-4" />
-              Frontend Engineering Assessment Template
-            </div>
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-balance leading-tight">
-              Build something{" "}
-              <span className="text-primary">amazing</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-muted-foreground font-light leading-relaxed max-w-2xl mx-auto">
-              A modern SaaS starter template with authentication, subscription management,
-              and everything you need to demonstrate your frontend skills.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-              <Button size="lg" className="px-8 py-6 text-lg" asChild>
-                <Link href="/auth/signup">Get Started</Link>
-              </Button>
-              <Button size="lg" variant="outline" className="px-8 py-6 text-lg" asChild>
-                <Link href="/upgrade">View Pricing</Link>
-              </Button>
-            </div>
+      <section className="flex-1 flex flex-col justify-center px-12 md:px-20 relative">
+        {/* live chip */}
+        <div
+          className="font-mono text-[11px] tracking-[0.2em] uppercase mb-6 flex items-center gap-3"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-mute)" }}
+        >
+          <span
+            className="inline-block w-1.5 h-1.5"
+            style={{
+              background: "var(--color-signal)",
+              animation: "pulse 1.6s ease-in-out infinite",
+            }}
+          />
+          Day 1 · Scaffolded · build sequence in progress
+        </div>
+
+        {/* headline */}
+        <h1
+          className="font-semibold m-0 max-w-[1280px]"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "clamp(56px, 9vw, 108px)",
+            lineHeight: 0.96,
+            letterSpacing: "-0.025em",
+          }}
+        >
+          Paste a video.
+          <br />
+          Get the{" "}
+          <em
+            className="not-italic md:italic"
+            style={{
+              fontFamily: "var(--font-italic)",
+              fontStyle: "italic",
+              fontWeight: 400,
+              color: "var(--color-signal)",
+            }}
+          >
+            brutally honest
+          </em>
+          <br />
+          reason it isn&apos;t going off.
+        </h1>
+
+        {/* placeholder input — will become the real upload on Day 3 */}
+        <div className="mt-12 max-w-[1100px]">
+          <div
+            className="flex items-center gap-4 px-6 border"
+            style={{
+              background: "var(--color-ink-2)",
+              borderColor: "var(--color-line)",
+            }}
+          >
+            <span
+              className="font-mono text-base"
+              style={{ fontFamily: "var(--font-mono)", color: "var(--color-signal)" }}
+            >
+              $
+            </span>
+            <span
+              className="flex-1 font-mono text-lg py-6"
+              style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-mute)" }}
+            >
+              upload coming day 3 — paste a video, get a score
+            </span>
+            <button
+              disabled
+              className="font-mono text-[13px] font-semibold tracking-[0.1em] uppercase px-7 py-5 cursor-not-allowed opacity-60"
+              style={{
+                background: "var(--color-signal)",
+                color: "var(--color-ink)",
+                alignSelf: "stretch",
+              }}
+            >
+              Score it →
+            </button>
+          </div>
+
+          <div
+            className="flex justify-between mt-3.5 font-mono text-[11px] tracking-[0.05em]"
+            style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-mute)" }}
+          >
+            <span>↳ no signup · no email · 22-second analysis</span>
+            <span>↳ scaffolded {new Date().toISOString().slice(0, 10)}</span>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="container mx-auto px-6 py-24 bg-secondary/30">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-4">What's included</h2>
-          <p className="text-center text-muted-foreground mb-16 text-lg max-w-2xl mx-auto">
-            Everything you need to build and showcase a modern web application.
-          </p>
-          <div className="grid md:grid-cols-2 gap-8">
-            {features.map((feature) => (
-              <div key={feature.title} className="flex gap-4 p-6 rounded-xl bg-card border border-border">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <feature.icon className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <Footer />
 
-      {/* Tech Stack Section */}
-      <section className="container mx-auto px-6 py-24">
-        <div className="max-w-3xl mx-auto text-center space-y-8">
-          <h2 className="text-4xl font-bold">Modern Tech Stack</h2>
-          <div className="flex flex-wrap justify-center gap-4">
-            {["Next.js 16", "React 19", "TypeScript", "Tailwind CSS", "Supabase", "Shadcn/ui"].map((tech) => (
-              <div key={tech} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary border border-border">
-                <Check className="w-4 h-4 text-primary" />
-                <span className="font-medium">{tech}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="container mx-auto px-6 py-24">
-        <div className="max-w-3xl mx-auto text-center space-y-8">
-          <h2 className="text-4xl font-bold">Ready to start?</h2>
-          <p className="text-lg text-muted-foreground">
-            Create an account and explore the features of this template.
-          </p>
-          <Button size="lg" className="px-8 py-6 text-lg" asChild>
-            <Link href="/auth/signup">Create Account</Link>
-          </Button>
-        </div>
-      </section>
-    </div>
+      <style>{`@keyframes pulse { 0%,100% {opacity:1} 50% {opacity:0.3} }`}</style>
+    </main>
   )
 }

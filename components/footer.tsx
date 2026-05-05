@@ -1,34 +1,21 @@
-"use client"
-
-import Link from "next/link"
-
 export function Footer() {
-  const currentYear = new Date().getFullYear()
-
   return (
-    <footer className="border-t border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 mt-auto">
-      <div className="container mx-auto px-6 py-8">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Copyright */}
-          <div className="text-sm text-muted-foreground">
-            © {currentYear} 8x Template. All rights reserved.
-          </div>
-
-          {/* Links */}
-          <div className="flex items-center gap-6 text-sm">
-            <Link
-              href="/privacy"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Privacy Policy
-            </Link>
-            <Link
-              href="/terms"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Terms of Service
-            </Link>
-          </div>
+    <footer
+      className="border-t mt-auto"
+      style={{ borderColor: "var(--color-line)" }}
+    >
+      <div className="container mx-auto px-12 py-6 flex items-center justify-between">
+        <div
+          className="font-mono text-[10px] tracking-[0.15em] uppercase"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-mute)" }}
+        >
+          METRIC.fyi · v0.1 · {new Date().getFullYear()}
+        </div>
+        <div
+          className="font-mono text-[10px] tracking-[0.1em] uppercase"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-mute)" }}
+        >
+          Built for the 8x &quot;Go Viral&quot; contest
         </div>
       </div>
     </footer>

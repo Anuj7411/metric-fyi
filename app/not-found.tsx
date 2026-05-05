@@ -1,43 +1,60 @@
-import { Navigation } from "@/components/navigation"
-import { Button } from "@/components/ui/button"
-import { SearchX, Home } from "lucide-react"
 import Link from "next/link"
+import { Navigation } from "@/components/navigation"
+import { Footer } from "@/components/footer"
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-background">
+    <main
+      className="flex flex-col min-h-screen relative"
+      style={{ background: "var(--color-ink)", color: "var(--color-text)" }}
+    >
       <Navigation />
 
-      <div className="flex items-center justify-center px-4 py-16 min-h-[calc(100vh-80px)]">
-        <div className="max-w-2xl w-full text-center">
-          {/* Icon */}
-          <div className="mb-8 flex justify-center">
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full" />
-              <SearchX className="w-24 h-24 text-primary relative" strokeWidth={1.5} />
-            </div>
+      <div className="flex-1 flex items-center justify-center px-12">
+        <div className="max-w-3xl w-full">
+          <div
+            className="font-mono text-[11px] tracking-[0.2em] uppercase mb-4"
+            style={{ fontFamily: "var(--font-mono)", color: "var(--color-hot)" }}
+          >
+            404 · Not found
           </div>
-
-          {/* Heading */}
-          <h1 className="text-7xl font-bold tracking-tight mb-4">404</h1>
-          <h2 className="text-4xl font-bold tracking-tight mb-6">
-            Page not found
-          </h2>
-
-          {/* Description */}
-          <p className="text-xl text-muted-foreground font-light mb-12 max-w-md mx-auto">
-            The page you're looking for doesn't exist or has been moved.
-          </p>
-
-          {/* Action Button */}
-          <Button size="lg" asChild>
-            <Link href="/" className="flex items-center gap-2">
-              <Home className="w-5 h-5" />
-              Return Home
-            </Link>
-          </Button>
+          <h1
+            className="font-semibold m-0"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(56px, 9vw, 96px)",
+              lineHeight: 0.96,
+              letterSpacing: "-0.025em",
+            }}
+          >
+            That route doesn&apos;t exist{" "}
+            <em
+              className="not-italic md:italic"
+              style={{
+                fontFamily: "var(--font-italic)",
+                fontStyle: "italic",
+                fontWeight: 400,
+                color: "var(--color-text-mute)",
+              }}
+            >
+              (yet).
+            </em>
+          </h1>
+          <Link
+            href="/"
+            className="inline-block mt-10 font-mono text-[13px] font-semibold tracking-[0.1em] uppercase px-7 py-4 hover:opacity-90 transition-opacity"
+            style={{
+              fontFamily: "var(--font-mono)",
+              background: "var(--color-signal)",
+              color: "var(--color-ink)",
+            }}
+          >
+            ← Back home
+          </Link>
         </div>
       </div>
-    </div>
+
+      <Footer />
+    </main>
   )
 }
