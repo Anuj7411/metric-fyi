@@ -48,5 +48,10 @@
     "supabase": "^2.98.2",
     "tailwindcss": "^4.1.9",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "supabase"
+    ]
   }
 }
