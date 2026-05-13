@@ -6,6 +6,8 @@ A virality-score web app for short-form video. Upload a clip, get a 0–100 scor
 
 Built for the **8x Engineer "Go Viral Clone" contest** (May 2026).
 
+**Live:** [metric-fyi.vercel.app](https://metric-fyi.vercel.app)
+
 ---
 
 ## Status

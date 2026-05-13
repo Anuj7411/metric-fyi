@@ -56,9 +56,15 @@ A running log of what I built each session, what decisions I made, and what's le
 - **Score button enables on file pick OR sample pick.** Clicking shows a toast saying "Day 3 wires this up" — keeps the demo honest about scope.
 - **No "Pricing" nav link.** Brief skips payments; nav items now read `How it works · Examples · Sign in →`.
 
+### End-of-day deploy
+
+- Supabase project created (`kjqwjilhxzeqkdydtsoj`).
+- Vercel project created, env vars set (URL + anon key), deployed: **[metric-fyi.vercel.app](https://metric-fyi.vercel.app)**.
+- Smoke-tested live HTML: headline, lime signal color, 3 sample chips, live counter, receipt footer all render. All 3 self-hosted fonts preloaded.
+
 ### What's left
 
-- Day 3: upload pipeline, Supabase Storage, `reports` table with RLS (**requires Supabase project — user creating now**)
+- Day 3: upload pipeline, Supabase Storage, `reports` table with RLS
 - Day 4: Gemini 2.0 Flash analysis backend + the prompt
 - Day 5: streaming reveal + report layout
 - Day 6: visible reasoning (citations) + video player coupling
