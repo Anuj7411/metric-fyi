@@ -62,9 +62,33 @@ A running log of what I built each session, what decisions I made, and what's le
 - Vercel project created, env vars set (URL + anon key), deployed: **[metric-fyi.vercel.app](https://metric-fyi.vercel.app)**.
 - Smoke-tested live HTML: headline, lime signal color, 3 sample chips, live counter, receipt footer all render. All 3 self-hosted fonts preloaded.
 
+---
+
+## Day 3 — May 14, 2026 · Upload pipeline + RLS
+
+- Installed Supabase CLI as devDep. Wired three scripts: `pnpm db:link` (one-time link to `kjqwjilhxzeqkdydtsoj`), `pnpm db:push` (apply migrations), `pnpm db:types` (generate TypeScript types — Day 4+).
+- Updated `supabase/config.toml`: `project_id = "metric-fyi"`, storage `file_size_limit = "100MiB"`.
+- Wrote `supabase/migrations/20260514010000_create_reports.sql` — `reports` table with strict status/mime/size CHECK constraints, RLS enabled, `auto-updated_at` trigger.
+- Wrote `supabase/migrations/20260514010100_create_videos_bucket.sql` — `videos` bucket, 100 MiB cap, mime-restricted, public read, anon write.
+- **Security model:** no service-role anywhere. All operations run as `anon` + RLS. Anon can INSERT pending reports (CHECK enforces `user_id IS NULL`, `status='pending'`, `analysis IS NULL`). Anon CANNOT directly SELECT — reads go through `fetch_report(p_id uuid)` SECURITY DEFINER function, so callers must know the unguessable v4 UUID. Standard public-by-link pattern (Imgur/Pastebin/Cal.com).
+- Recreated `lib/supabase/client.ts` (browser, anon) and `lib/supabase/server.ts` (server, anon, SSR cookie wiring for Day 8 auth).
+- `lib/schemas/report.ts`: Zod source of truth for the API contract. `UploadInitRequest`, `UploadInitResponse`, `ReportRow`.
+- `lib/rate-limit.ts`: in-memory token bucket. 10 uploads / 10 min per IP. Per-lambda-instance on Vercel (documented limit — Day 9 swaps to Vercel KV).
+- `app/api/upload/init/route.ts`: rate-limit → validate → insert pending row → return `{ id, storagePath }`. Never proxies file bytes (would hit Vercel's 4.5 MB body cap).
+- `app/r/[id]/page.tsx`: server component, validates UUID format, fetches via the SECURITY DEFINER RPC, renders placeholder with file metadata. Will become the streamed score reveal Day 5.
+- Wired `components/landing/Hero.tsx` — "Score it →" now does the real upload: POST `/api/upload/init`, then client-direct `supabase.storage.from('videos').upload()` (bypassing Vercel body limit), then `router.push('/r/[id]')`. Toast progression: loading → success/error.
+- Sample chips still stubbed — Day 4 wires those to pre-loaded mp4s.
+
+### Decisions made today
+
+- **No service-role key.** Anon + RLS only. More secure (one bug can't bypass everything), stronger engineering signal for judges.
+- **Client-direct Storage upload** instead of routing through `/api/upload`. Vercel's 4.5 MB body limit would cap us at tiny files otherwise.
+- **Storage path === report ID** (`{uuid}.{ext}`). Trivial lookup, no separate filename mapping needed.
+- **Public Storage bucket.** Report page uses plain `<video src>` — no signed-URL handling. Same unguessable-UUID security model as the rows.
+- **In-memory rate limit for now.** Per-lambda on Vercel = imperfect but adequate for contest scale. Documented; Day 9 swap.
+
 ### What's left
 
-- Day 3: upload pipeline, Supabase Storage, `reports` table with RLS
 - Day 4: Gemini 2.0 Flash analysis backend + the prompt
 - Day 5: streaming reveal + report layout
 - Day 6: visible reasoning (citations) + video player coupling

@@ -1,6 +1,6 @@
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "8x-hiring-template"
+project_id = "metric-fyi"
 
 [api]
 enabled = true
@@ -60,7 +60,7 @@ enable_confirmations = false
 [storage]
 enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MiB"
+file_size_limit = "100MiB"
 
 [analytics]
 enabled = true

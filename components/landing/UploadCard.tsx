@@ -11,8 +11,9 @@ type Props = {
   /** Filename currently picked (from drop, click, or sample). Empty = nothing picked yet. */
   pickedLabel: string
   onFile: (file: File) => void
-  /** Day 2 stub action when the user clicks "Score it →" with a picked source. */
   onScore: () => void
+  /** Disables the score button while an upload is in flight. */
+  busy?: boolean
 }
 
 /**
@@ -22,7 +23,7 @@ type Props = {
  *
  * Native HTML5 drag-and-drop. No external library.
  */
-export function UploadCard({ pickedLabel, onFile, onScore }: Props) {
+export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props) {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -128,14 +129,14 @@ export function UploadCard({ pickedLabel, onFile, onScore }: Props) {
       <Button
         variant="signal"
         size="lg"
-        disabled={!canScore}
+        disabled={!canScore || busy}
         onClick={(e) => {
           e.stopPropagation()
           onScore()
         }}
         className="!rounded-none !h-auto"
       >
-        Score it →
+        {busy ? "Uploading…" : "Score it →"}
       </Button>
     </div>
   )

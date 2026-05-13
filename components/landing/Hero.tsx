@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { UploadCard } from "./UploadCard"
 import { SampleVideoPicker } from "./SampleVideoPicker"
 import { type SampleVideo } from "@/lib/sample-videos"
+import { createClient } from "@/lib/supabase/client"
 import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
 
 type Picked =
@@ -21,13 +23,12 @@ type Picked =
  * The page intentionally ends at this input — no marketing scroll below.
  */
 export function Hero() {
+  const router = useRouter()
   const [picked, setPicked] = useState<Picked>(null)
+  const [busy, setBusy] = useState(false)
 
   function handleFile(file: File) {
     setPicked({ kind: "file", file, label: file.name })
-    toast.success(`Picked ${file.name}`, {
-      description: "Real analysis pipeline lands Day 3.",
-    })
   }
 
   function handleSample(sample: SampleVideo) {
@@ -36,19 +37,86 @@ export function Hero() {
       sample,
       label: `${sample.handle} · ${sample.category}`,
     })
-    toast.success(`Loaded sample: ${sample.handle}`, {
-      description: "Real analysis pipeline lands Day 3.",
-    })
   }
 
-  function handleScore() {
-    if (!picked) return
-    toast(`Day 3 wires this up.`, {
-      description:
-        picked.kind === "file"
-          ? `${picked.file.name} would be uploaded and analyzed.`
-          : `${picked.sample.handle}'s clip would be analyzed.`,
-    })
+  async function handleScore() {
+    if (!picked || busy) return
+
+    // Samples don't have real mp4s yet — Day 4/5 wires them in.
+    if (picked.kind === "sample") {
+      toast("Sample analysis arrives Day 4.", {
+        description: `${picked.sample.handle}'s clip will run through the real pipeline.`,
+      })
+      return
+    }
+
+    const file = picked.file
+    setBusy(true)
+    const toastId = toast.loading(`Uploading ${file.name}…`)
+
+    try {
+      // 1. Init the report row
+      const initRes = await fetch("/api/upload/init", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+        }),
+      })
+
+      if (!initRes.ok) {
+        const body = await initRes.json().catch(() => ({}))
+        if (initRes.status === 429) {
+          toast.error("Too many uploads — slow down a moment.", { id: toastId })
+        } else if (initRes.status === 400) {
+          toast.error("That file isn't supported.", {
+            id: toastId,
+            description: "Use mp4, mov, or webm under 100 MB.",
+          })
+        } else {
+          toast.error("Couldn't start the upload.", {
+            id: toastId,
+            description: body?.error ?? "Try again in a moment.",
+          })
+        }
+        return
+      }
+
+      const { id, storagePath } = (await initRes.json()) as {
+        id: string
+        storagePath: string
+      }
+
+      // 2. Upload bytes directly to Supabase Storage (bypasses Vercel body limit)
+      const supabase = createClient()
+      const { error: upErr } = await supabase.storage
+        .from("videos")
+        .upload(storagePath, file, {
+          contentType: file.type,
+          upsert: false,
+        })
+
+      if (upErr) {
+        toast.error("Upload failed mid-flight.", {
+          id: toastId,
+          description: upErr.message,
+        })
+        return
+      }
+
+      // 3. Navigate to the report page
+      toast.success("Uploaded. Opening report.", { id: toastId })
+      router.push(`/r/${id}`)
+    } catch (err) {
+      toast.error("Something broke.", {
+        id: toastId,
+        description: err instanceof Error ? err.message : "Unknown error",
+      })
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -70,7 +138,6 @@ export function Hero() {
         variants={staggerParent}
         className="relative max-w-[1280px]"
       >
-        {/* live chip */}
         <motion.div
           {...fadeUp}
           className="flex items-center gap-3.5 font-mono text-[11px] mb-6"
@@ -92,7 +159,6 @@ export function Hero() {
           Live · 14,302 videos scored this week
         </motion.div>
 
-        {/* the headline */}
         <motion.h1
           {...fadeUp}
           transition={{ duration: dur.page, ease }}
@@ -121,15 +187,14 @@ export function Hero() {
           reason it isn&apos;t going off.
         </motion.h1>
 
-        {/* upload card */}
         <motion.div {...fadeUp} className="mt-12 max-w-[1100px]">
           <UploadCard
             pickedLabel={picked?.label ?? ""}
             onFile={handleFile}
             onScore={handleScore}
+            busy={busy}
           />
 
-          {/* affordances row */}
           <div
             className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mt-3.5"
             style={{ color: "var(--color-text-mute)" }}
@@ -152,7 +217,6 @@ export function Hero() {
         </motion.div>
       </motion.div>
 
-      {/* receipt-style footer block — bottom-right corner */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

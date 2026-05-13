@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "logs:sync": "bash scripts/sync-logs.sh"
+    "logs:sync": "bash scripts/sync-logs.sh",
+    "db:link": "supabase link --project-ref kjqwjilhxzeqkdydtsoj",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript --project-id kjqwjilhxzeqkdydtsoj > lib/db/types.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -42,6 +45,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "postcss": "^8.5",
+    "supabase": "^2.98.2",
     "tailwindcss": "^4.1.9",
     "typescript": "^5"
   }
