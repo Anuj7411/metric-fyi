@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { Logo } from "@/components/marketing/Logo"
 
 export function Navigation() {
   return (
@@ -6,18 +7,7 @@ export function Navigation() {
       className="relative flex justify-between items-center px-12 py-5 border-b"
       style={{ borderColor: "var(--color-line)" }}
     >
-      <Link href="/" className="flex items-center gap-2.5 group">
-        <div
-          className="w-3.5 h-3.5"
-          style={{ background: "var(--color-signal)" }}
-        />
-        <span
-          className="font-mono text-[13px] font-semibold tracking-[0.05em] group-hover:opacity-80 transition-opacity"
-          style={{ fontFamily: "var(--font-mono)" }}
-        >
-          METRIC.fyi
-        </span>
-      </Link>
+      <Logo />
 
       <div
         className="hidden md:flex gap-8 font-mono text-[11px] tracking-[0.15em] uppercase"

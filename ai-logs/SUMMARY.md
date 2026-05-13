@@ -25,10 +25,40 @@ A running log of what I built each session, what decisions I made, and what's le
 - App stays dark; the public `/r/[id]` report screen flips to paper. The report is designed to screenshot well in white Twitter feeds; a dark dashboard screenshot vanishes there.
 - No marketing scroll below the landing hero. The page ends at the input.
 
+### Mid-session — AI logs restructure
+
+- Contest spec ([8xengineer.com/guidelines/ai-logs](https://8xengineer.com/guidelines/ai-logs)) expects `/ai-logs/` folder, not a root-level file.
+- Moved `AI_LOG.md` → `ai-logs/SUMMARY.md`. Copied raw Claude Code transcript as `ai-logs/*.jsonl` (accepted format).
+- Added `pnpm logs:sync` (wraps `scripts/sync-logs.sh`) — idempotent re-sync before commits.
+
+---
+
+## Day 2 — May 14, 2026 · Visual system + working hero
+
+- Installed `framer-motion` (locked-stack animation lib).
+- Wrote `lib/motion.ts` — single source of truth for easings, durations, stagger. Lifted directly from the design's `motion.jsx`: `[0.2,0.8,0.2,1]` cubic-bezier, durations 120/220/480ms, 40ms stagger, 1400ms score count-up. Forbidden: bounce, spring overshoot, parallax.
+- Wrote `lib/sample-videos.ts` — typed metadata for the 3 demo clips (`@khaby.lame`, `@itsmaya`, `@bento.mufc`). Day 3 plugs real mp4 URLs in.
+- Built `components/marketing/Logo.tsx` (lime square + mono wordmark, reused by nav and future report pages).
+- Rewrote `components/ui/button.tsx` from scratch — replaced shadcn's 6 stock variants with our 2: `signal` (lime fill on ink) and `ghost` (line border, dim text). Square corners (matches design), no shadow, mono caps with `0.1em` tracking.
+- Built `components/landing/UploadCard.tsx` — page-wide HTML5 drag-and-drop (no `react-dropzone` dep), 100MB limit, accepts `.mp4/.mov/.webm`, dim cursor when empty, lime border + "drop to upload →" when dragging.
+- Built `components/landing/SampleVideoPicker.tsx` — 3 chips, active state (lime border) when one's picked.
+- Built `components/landing/Hero.tsx` — composes headline + upload card + sample picker + receipt-style stats block. Staggered Framer reveals on mount. Picked-state lifted here so the score button enables/disables.
+- Refactored `app/page.tsx` to a thin shell: `Navigation + Hero + Footer`.
+- Updated `Navigation` to use the new `Logo` component.
+
+### Cleanups while wiring
+
+- Deleted unused stock shadcn primitives (`alert-dialog`, `sidebar`, `sheet`, `input`, `separator`, `skeleton`, `tooltip`, `select`, `card`, `label`). They referenced variants our new `Button` doesn't have. Only `button.tsx` remains in `components/ui/`. We'll re-add fresh primitives with brand styling as needed Days 5+.
+
+### Decisions made today
+
+- **Page-wide drag-drop** instead of just on the input row. Forgiving UX: drop anywhere → it lands on the input.
+- **Score button enables on file pick OR sample pick.** Clicking shows a toast saying "Day 3 wires this up" — keeps the demo honest about scope.
+- **No "Pricing" nav link.** Brief skips payments; nav items now read `How it works · Examples · Sign in →`.
+
 ### What's left
 
-- Day 2: visual system polish, custom shadcn primitives, dual-entry hero (file drop + sample picker)
-- Day 3: upload pipeline, Supabase Storage, `reports` table with RLS
+- Day 3: upload pipeline, Supabase Storage, `reports` table with RLS (**requires Supabase project — user creating now**)
 - Day 4: Gemini 2.0 Flash analysis backend + the prompt
 - Day 5: streaming reveal + report layout
 - Day 6: visible reasoning (citations) + video player coupling
