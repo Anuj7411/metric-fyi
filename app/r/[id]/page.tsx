@@ -31,7 +31,9 @@ export default async function ReportPage({
     .rpc("fetch_report", { p_id: id })
     .single<Report>()
 
-  if (error || !data) notFound()
+  // fetch_report returns a composite type; when no row matches, the
+  // composite comes back with every field null. Treat missing id as 404.
+  if (error || !data || !data.id) notFound()
 
   const sizeMB = (data.file_size / 1024 / 1024).toFixed(1)
 
