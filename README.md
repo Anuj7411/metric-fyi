@@ -10,7 +10,7 @@ Built for the **8x Engineer "Go Viral Clone" contest** (May 2026).
 
 ## Status
 
-Day 1 of 10 — scaffold up, deployed, design tokens wired. The full build sequence lives in `docs/PLAN.md` (committed Day 1). See `AI_LOG.md` for what shipped each day.
+Day 1 of 10 — scaffold up, deployed, design tokens wired. The full build sequence lives in `docs/PLAN.md` (committed Day 1). See [`/ai-logs/`](./ai-logs/) for what shipped each day plus the raw Claude Code conversation transcripts.
 
 ## Stack
 
