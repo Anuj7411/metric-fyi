@@ -6,13 +6,11 @@ import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { UploadCard } from "./UploadCard"
 import { SampleVideoPicker } from "./SampleVideoPicker"
-import { type SampleVideo } from "@/lib/sample-videos"
 import { createClient } from "@/lib/supabase/client"
 import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
 
 type Picked =
   | { kind: "file"; file: File; label: string }
-  | { kind: "sample"; sample: SampleVideo; label: string }
   | null
 
 /**
@@ -31,24 +29,8 @@ export function Hero() {
     setPicked({ kind: "file", file, label: file.name })
   }
 
-  function handleSample(sample: SampleVideo) {
-    setPicked({
-      kind: "sample",
-      sample,
-      label: `${sample.handle} · ${sample.category}`,
-    })
-  }
-
   async function handleScore() {
     if (!picked || busy) return
-
-    // Samples don't have real mp4s yet — Day 4/5 wires them in.
-    if (picked.kind === "sample") {
-      toast("Sample analysis arrives Day 4.", {
-        description: `${picked.sample.handle}'s clip will run through the real pipeline.`,
-      })
-      return
-    }
 
     const file = picked.file
     setBusy(true)
@@ -209,10 +191,7 @@ export function Hero() {
               <span>↳ drop anywhere on the page</span>
               <span>↳ no signup · no email · 22-second analysis</span>
             </div>
-            <SampleVideoPicker
-              onPick={handleSample}
-              pickedId={picked?.kind === "sample" ? picked.sample.id : null}
-            />
+            <SampleVideoPicker />
           </div>
         </motion.div>
       </motion.div>

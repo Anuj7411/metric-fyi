@@ -1,43 +1,42 @@
 /**
- * Sample videos shown on the landing page.
+ * Real pre-analyzed sample reports linked from the landing page chips.
  *
- * Three pre-loaded demo clips. Reviewers can hit the magic moment in
- * under 30 seconds without needing their own video file.
+ * Clicking a chip navigates directly to /r/{id} — reviewers hit the magic
+ * moment in under 5 seconds without uploading anything. Each id below
+ * corresponds to a real `reports` row that already has analysis data
+ * persisted, so the page renders the full v2 layout immediately.
  *
- * Day 2: metadata is stubbed. Day 3 wires real mp4s into Supabase Storage
- * and points `videoUrl` at the public URL.
+ * To add or rotate samples: see scripts/seed-samples.ts.
  */
 
 export type SampleVideo = {
+  /** The reports.id UUID — also the slug in /r/{id}. */
   id: string
+  /** Display handle shown in the chip. */
   handle: string
+  /** Short content tag — appears after the · in the chip. */
   category: string
-  /** Will be filled Day 3 with the real Storage URL. */
-  videoUrl: string | null
-  /** Pre-computed virality score for the demo. */
+  /** Pre-computed score shown in tooltips, never recomputed at click time. */
   demoScore: number
 }
 
 export const SAMPLE_VIDEOS: SampleVideo[] = [
   {
-    id: "khaby-life-hack",
-    handle: "@khaby.lame",
-    category: "life hack",
-    videoUrl: null,
-    demoScore: 88,
+    id: "8acd04b5-c59e-408b-8da6-b6d4416f9238",
+    handle: "@anon",
+    category: "secret santa app",
+    demoScore: 48,
   },
   {
-    id: "itsmaya-grwm",
-    handle: "@itsmaya",
-    category: "grwm",
-    videoUrl: null,
-    demoScore: 62,
+    id: "d0072db2-2595-4818-a397-173e86aeafe9",
+    handle: "@cloudinary",
+    category: "dog clip",
+    demoScore: 48,
   },
   {
-    id: "bento-goal",
-    handle: "@bento.mufc",
-    category: "goal",
-    videoUrl: null,
-    demoScore: 73,
+    id: "667cc6b8-b9a7-4420-a389-ff826dbd5700",
+    handle: "@blender",
+    category: "animation",
+    demoScore: 28,
   },
 ]
