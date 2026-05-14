@@ -10,6 +10,7 @@ import {
   topLiftDisplay,
 } from "@/lib/ai/derive"
 import type { Analysis } from "@/lib/ai/schema"
+import { useVideoFrames } from "@/hooks/useVideoFrames"
 import { MonoTag, Pill, Watermark, btnStyle } from "./atoms"
 import { VideoSection } from "./VideoPlayer"
 
@@ -35,7 +36,7 @@ export function ReportView({ videoUrl }: { videoUrl: string }) {
       <VideoSection videoUrl={videoUrl} />
       <FixHook analysis={analysis} />
       <FixPacing analysis={analysis} />
-      <FixThumbnail analysis={analysis} />
+      <FixThumbnail analysis={analysis} videoUrl={videoUrl} />
       <FixCaption analysis={analysis} />
       <ApplyCTA analysis={analysis} />
       <Trending analysis={analysis} />
@@ -389,50 +390,47 @@ function FixPacing({ analysis }: { analysis: Analysis }) {
    FIX THUMBNAIL — fix 03 with current vs proposed
    ───────────────────────────────────────────────────────────── */
 
-function FixThumbnail({ analysis }: { analysis: Analysis }) {
+function FixThumbnail({
+  analysis,
+  videoUrl,
+}: {
+  analysis: Analysis
+  videoUrl: string
+}) {
+  // Extract two real frames from the source video:
+  //   [0] = current cover frame (just past 0s to dodge black opening)
+  //   [1] = the AI's proposed best-frame timestamp
+  // Same hook the timeline strip uses; the second hidden <video> reuses
+  // the browser's HTTP cache so there's no double download.
+  const bestT = analysis.thumbnail.bestFrameAt
+  const extracted = useVideoFrames(videoUrl, [0.05, bestT], {
+    maxWidth: 260,
+    quality: 0.75,
+  })
+
   return (
     <FixSectionShell
       number="03"
       cat="THUMBNAIL"
-      timeLabel={`BEST FRAME AT ${analysis.thumbnail.bestFrameAt.toFixed(1)}s`}
+      timeLabel={`BEST FRAME AT ${bestT.toFixed(1)}s`}
       timeColor="var(--color-signal)"
       diagnosis={analysis.thumbnail.issue}
       rightCol={
         <div className="grid grid-cols-2 gap-3 mt-4 md:mt-0">
-          <ThumbBox label="CURRENT" sub="FRAME 0 · GENERIC" hot>
-            <div
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 11,
-                color: "white",
-                fontWeight: 600,
-                lineHeight: 1.4,
-                textAlign: "center",
-              }}
-            >
-              Frame 0
-            </div>
-          </ThumbBox>
+          <ThumbBox
+            label="CURRENT"
+            sub="FRAME 0 · GENERIC"
+            hot
+            imageUrl={extracted[0]}
+            fallback="Frame 0"
+          />
           <ThumbBox
             label="PROPOSED"
-            sub={`FRAME ${analysis.thumbnail.bestFrameAt.toFixed(1)}s`}
+            sub={`FRAME ${bestT.toFixed(1)}s`}
             good
-          >
-            <div
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 10,
-                color: "white",
-                fontWeight: 600,
-                lineHeight: 1.3,
-                textAlign: "center",
-                position: "relative",
-                zIndex: 1,
-              }}
-            >
-              Best frame
-            </div>
-          </ThumbBox>
+            imageUrl={extracted[1]}
+            fallback="Best frame"
+          />
         </div>
       }
     >
@@ -1075,40 +1073,91 @@ function ThumbBox({
   sub,
   hot,
   good,
-  children,
+  imageUrl,
+  fallback,
 }: {
   label: string
   sub: string
   hot?: boolean
   good?: boolean
-  children: React.ReactNode
+  /** Data URL of an extracted video frame. Renders when available. */
+  imageUrl?: string
+  /** Text shown in the placeholder while extraction is in flight. */
+  fallback: string
 }) {
   const color = hot ? "var(--color-hot)" : "var(--color-signal)"
   return (
     <div>
       <MonoTag color={color}>{label}</MonoTag>
       <div
-        className="mt-2 flex items-center justify-center p-3 text-center relative"
+        className="relative mt-2 overflow-hidden"
         style={{
           aspectRatio: "9 / 16",
-          background: hot
+          background: imageUrl
             ? "#000"
-            : "linear-gradient(180deg,#4a3a1a,#291f0f)",
+            : hot
+              ? "#000"
+              : "linear-gradient(180deg,#4a3a1a,#291f0f)",
           border: `1px solid ${color}`,
         }}
       >
-        {good && (
-          <div
-            aria-hidden
-            className="absolute"
-            style={{
-              inset: "30% 18%",
-              background: "rgba(232,177,74,0.4)",
-              border: "1px solid rgba(232,177,74,0.7)",
-            }}
-          />
+        {imageUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt=""
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+              }}
+            />
+            {/* Soft color wash matching the section's accent — preserves
+                the hot/good encoding even when the frame itself is neutral */}
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: hot
+                  ? "linear-gradient(180deg, rgba(255,74,28,0.18), transparent 50%)"
+                  : "linear-gradient(180deg, rgba(198,255,61,0.16), transparent 50%)",
+                mixBlendMode: "screen",
+              }}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-center p-3">
+            {good && (
+              <div
+                aria-hidden
+                className="absolute"
+                style={{
+                  inset: "30% 18%",
+                  background: "rgba(232,177,74,0.4)",
+                  border: "1px solid rgba(232,177,74,0.7)",
+                }}
+              />
+            )}
+            <div
+              style={{
+                position: "relative",
+                fontFamily: "var(--font-sans)",
+                fontSize: 11,
+                color: "white",
+                fontWeight: 600,
+                lineHeight: 1.4,
+                zIndex: 1,
+              }}
+            >
+              {fallback}
+            </div>
+          </div>
         )}
-        {children}
       </div>
       <div
         style={{
