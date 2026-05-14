@@ -4,6 +4,8 @@ import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { ReportView } from "@/components/report/ReportView"
 import { PendingClient } from "@/components/report/PendingClient"
+import { VideoPlayer } from "@/components/report/VideoPlayer"
+import { ReportProvider } from "@/contexts/report-context"
 import { Analysis } from "@/lib/ai/schema"
 
 const UUID_RE =
@@ -37,6 +39,14 @@ export default async function ReportPage({
 
   if (error || !data || !data.id) notFound()
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const videoUrl = `${supabaseUrl}/storage/v1/object/public/videos/${data.storage_path}`
+
+  const initialAnalysis =
+    data.status === "ready" && data.analysis
+      ? Analysis.parse(data.analysis)
+      : null
+
   return (
     <main
       className="flex flex-col min-h-screen relative"
@@ -44,49 +54,55 @@ export default async function ReportPage({
     >
       <Navigation />
 
-      <div className="flex-1 flex flex-col">
-        {/* status chip + file meta — always visible at top */}
-        <div className="max-w-[1280px] mx-auto px-12 md:px-20 pt-10 w-full">
-          <div
-            className="font-mono text-[11px]"
-            style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text-mute)",
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-            }}
-          >
-            REPORT · /r/{data.id.slice(0, 6)}{" "}
-            <span style={{ color: "var(--color-text-mute)" }}>·</span>{" "}
-            <span
+      <ReportProvider initialAnalysis={initialAnalysis}>
+        <div className="flex-1 flex flex-col">
+          {/* status chip — always visible at top */}
+          <div className="max-w-[1280px] mx-auto px-12 md:px-20 pt-10 w-full">
+            <div
+              className="font-mono text-[11px]"
               style={{
-                color:
-                  data.status === "ready"
-                    ? "var(--color-signal)"
-                    : data.status === "failed"
-                      ? "var(--color-hot)"
-                      : "var(--color-text-dim)",
+                fontFamily: "var(--font-mono)",
+                color: "var(--color-text-mute)",
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
               }}
             >
-              {data.status}
-            </span>
-            <span style={{ color: "var(--color-text-mute)" }}>
-              {" "}
-              · {data.file_name}
-            </span>
+              REPORT · /r/{data.id.slice(0, 6)}{" "}
+              <span style={{ color: "var(--color-text-mute)" }}>·</span>{" "}
+              <span
+                style={{
+                  color:
+                    data.status === "ready"
+                      ? "var(--color-signal)"
+                      : data.status === "failed"
+                        ? "var(--color-hot)"
+                        : "var(--color-text-dim)",
+                }}
+              >
+                {data.status}
+              </span>
+              <span style={{ color: "var(--color-text-mute)" }}>
+                {" "}
+                · {data.file_name}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* The body depends on status */}
-        {data.status === "ready" && data.analysis ? (
-          <ReportView analysis={Analysis.parse(data.analysis)} />
-        ) : data.status === "failed" ? (
-          <FailedState message={data.error_message ?? "Unknown error"} />
-        ) : (
-          // pending or analyzing — kick off the analyze call from the client
-          <PendingClient id={data.id} />
-        )}
-      </div>
+          {/* Video player + timeline overlay — visible across all states.
+              The player stays mounted across pending → ready transition so
+              users keep their playback position. */}
+          <VideoPlayer videoUrl={videoUrl} />
+
+          {/* Status-dependent body */}
+          {data.status === "ready" && initialAnalysis ? (
+            <ReportView />
+          ) : data.status === "failed" ? (
+            <FailedState message={data.error_message ?? "Unknown error"} />
+          ) : (
+            <PendingClient id={data.id} />
+          )}
+        </div>
+      </ReportProvider>
 
       <Footer />
     </main>

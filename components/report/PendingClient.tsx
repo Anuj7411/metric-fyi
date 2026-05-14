@@ -3,40 +3,40 @@
 import { useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { ReportView } from "./ReportView"
+import { useReport } from "@/contexts/report-context"
 import type { Analysis } from "@/lib/ai/schema"
 import { dur, ease } from "@/lib/motion"
 
 type Phase =
-  | { kind: "idle" }
-  | { kind: "analyzing"; elapsedMs: number }
-  | { kind: "ready"; analysis: Analysis }
+  | { kind: "loading"; elapsedMs: number }
   | { kind: "error"; message: string }
 
 /**
- * Client component for the in-progress analysis state.
+ * Client component for the in-progress state.
  *
- * On mount:
- *   1. Fires POST /api/analyze/[id] (the route is idempotent — safe to retry)
- *   2. Renders a skeleton + a live-elapsed counter while waiting
- *   3. On success: renders the full ReportView in place
- *   4. On failure: shows the error + a retry button
- *
- * Day 5 will replace the skeleton with the streamed score-counter +
- * progressive section reveal. For Day 4 the skeleton stays simple.
+ *   - Fires POST /api/analyze/[id] exactly once on mount
+ *   - Shows a shimmer skeleton + live-elapsed counter while waiting
+ *   - On success, calls setAnalysis() on the context — the context-aware
+ *     ReportView (rendered from this same component) picks up the data
+ *     and renders the full report in place. The VideoPlayer above stays
+ *     mounted across the transition, so anyone watching their video
+ *     during the wait keeps their playback position.
+ *   - On failure, shows the error + a Retry button.
  */
 export function PendingClient({ id }: { id: string }) {
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" })
+  const { setAnalysis, analysis } = useReport()
+  const [phase, setPhase] = useState<Phase>({ kind: "loading", elapsedMs: 0 })
   const startedAt = useRef<number>(0)
   const fired = useRef(false)
 
-  // tick the live elapsed counter so the page feels alive during the wait
+  // Tick the elapsed counter while loading
   useEffect(() => {
-    if (phase.kind !== "analyzing") return
+    if (phase.kind !== "loading") return
     const t = setInterval(
       () =>
         setPhase((p) =>
-          p.kind === "analyzing"
-            ? { kind: "analyzing", elapsedMs: Date.now() - startedAt.current }
+          p.kind === "loading"
+            ? { kind: "loading", elapsedMs: Date.now() - startedAt.current }
             : p,
         ),
       120,
@@ -44,12 +44,11 @@ export function PendingClient({ id }: { id: string }) {
     return () => clearInterval(t)
   }, [phase.kind])
 
-  // fire the analyze call exactly once on mount
+  // Fire the analyze call exactly once
   useEffect(() => {
     if (fired.current) return
     fired.current = true
     startedAt.current = Date.now()
-    setPhase({ kind: "analyzing", elapsedMs: 0 })
 
     fetch(`/api/analyze/${id}`, { method: "POST" })
       .then(async (res) => {
@@ -63,7 +62,7 @@ export function PendingClient({ id }: { id: string }) {
           return
         }
         if (body.status === "ready" && body.analysis) {
-          setPhase({ kind: "ready", analysis: body.analysis as Analysis })
+          setAnalysis(body.analysis as Analysis)
         } else {
           setPhase({
             kind: "error",
@@ -77,10 +76,11 @@ export function PendingClient({ id }: { id: string }) {
           message: err instanceof Error ? err.message : "network error",
         })
       })
-  }, [id])
+  }, [id, setAnalysis])
 
-  if (phase.kind === "ready") {
-    return <ReportView analysis={phase.analysis} />
+  // If the analysis arrived (via setAnalysis above), defer to ReportView.
+  if (analysis) {
+    return <ReportView />
   }
 
   if (phase.kind === "error") {
@@ -117,12 +117,7 @@ export function PendingClient({ id }: { id: string }) {
           {phase.message}
         </p>
         <button
-          onClick={() => {
-            fired.current = false
-            setPhase({ kind: "idle" })
-            // re-trigger by reloading the page (server fetches fresh state)
-            window.location.reload()
-          }}
+          onClick={() => window.location.reload()}
           className="mt-8 font-mono text-[12px] tracking-[0.1em] uppercase px-6 py-3"
           style={{
             fontFamily: "var(--font-mono)",
@@ -138,12 +133,13 @@ export function PendingClient({ id }: { id: string }) {
     )
   }
 
-  // analyzing / idle — show the skeleton
-  const elapsed = phase.kind === "analyzing" ? phase.elapsedMs : 0
+  // Loading — shimmer skeleton with live elapsed counter
+  const elapsed = phase.elapsedMs
 
   return (
     <div className="max-w-[1280px] mx-auto px-12 md:px-20 pt-12">
-      <div className="flex items-center gap-3 font-mono text-[11px]"
+      <div
+        className="flex items-center gap-3 font-mono text-[11px]"
         style={{
           fontFamily: "var(--font-mono)",
           color: "var(--color-text-mute)",
@@ -176,7 +172,6 @@ export function PendingClient({ id }: { id: string }) {
         <span style={{ color: "var(--color-signal)" }}>…</span>
       </motion.h1>
 
-      {/* Skeleton placeholders so the page doesn't look empty */}
       <div className="mt-12 max-w-[820px] space-y-4">
         <Skeleton width="78%" />
         <Skeleton width="92%" />
@@ -191,8 +186,8 @@ export function PendingClient({ id }: { id: string }) {
         }}
       >
         Reading the video frame by frame. Listening to the audio. Cross-
-        referencing against category baselines. This takes 25–40 seconds for
-        most short clips on the free tier.
+        referencing against category baselines. While you wait, the player
+        above is yours to scrub.
       </p>
 
       <style>{`@keyframes pulse { 0%,100% {opacity:1} 50% {opacity:0.3} }

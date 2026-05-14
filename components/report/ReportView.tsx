@@ -1,18 +1,30 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { motion } from "framer-motion"
-import type { Analysis } from "@/lib/ai/schema"
+import { useReport } from "@/contexts/report-context"
+import { TimestampChip } from "./TimestampChip"
 import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
 
 /**
- * Renders a completed analysis. Used by both the server-component path
- * (when the row is already 'ready') and the client-component path (right
- * after the analyze endpoint returns).
+ * Renders a completed analysis from context.
  *
- * Day 4 layout: vertical column with each section in a labeled block.
- * Day 5 will rebuild as the designed two-pane streaming reveal.
+ * Reads `analysis` from <ReportProvider> rather than taking it as a prop —
+ * means the same component renders both the server-side "status=ready"
+ * path and the client-side "PendingClient just finished" path with zero
+ * extra plumbing.
+ *
+ * Every timestamp displayed is wrapped in <TimestampChip>: clicking seeks
+ * the video and lights up the matching marker on the timeline overlay.
+ * This is Differentiator #2 (visible reasoning) made concrete.
+ *
+ * Day 9 redesigns the layout. The TimestampChip + ReportProvider logic
+ * underneath is portable to whatever visual treatment we land on.
  */
-export function ReportView({ analysis }: { analysis: Analysis }) {
+export function ReportView() {
+  const { analysis } = useReport()
+  if (!analysis) return null
+
   return (
     <motion.div
       initial="initial"
@@ -108,7 +120,11 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
       {/* HOOK */}
       <motion.section {...fadeUp} className="pt-10">
         <Label>
-          HOOK · LANDS AT {analysis.hook.landsAt.toFixed(1)}s
+          HOOK · LANDS AT{" "}
+          <TimestampChip
+            seconds={analysis.hook.landsAt}
+            citation="hook"
+          />
         </Label>
         <Heading>{analysis.hook.issue}</Heading>
         <FixLine>{analysis.hook.fix}</FixLine>
@@ -124,15 +140,30 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
         <Label>PACING</Label>
         <Heading>{analysis.pacing.note}</Heading>
         {analysis.pacing.cuts.map((c, i) => (
-          <TimedItem key={i} time={`${c.at.toFixed(1)}s`} kind="cut">
+          <TimedItem
+            key={`cut-${i}`}
+            time={
+              <TimestampChip
+                seconds={c.at}
+                citation={`cut-${i}`}
+              />
+            }
+            kind="cut"
+          >
             <strong style={{ color: "var(--color-text)" }}>{c.issue}</strong>{" "}
             <span style={{ color: "var(--color-text-dim)" }}>{c.fix}</span>
           </TimedItem>
         ))}
         {analysis.pacing.deadAir.map((d, i) => (
           <TimedItem
-            key={i}
-            time={`${d.start.toFixed(1)}–${d.end.toFixed(1)}s`}
+            key={`da-${i}`}
+            time={
+              <TimestampChip
+                seconds={d.start}
+                citation={`deadair-${i}`}
+                label={`${d.start.toFixed(1)}–${d.end.toFixed(1)}s`}
+              />
+            }
             kind="deadair"
           >
             {d.why}
@@ -143,7 +174,11 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
       {/* THUMBNAIL */}
       <motion.section {...fadeUp} className="pt-10">
         <Label>
-          THUMBNAIL · BEST FRAME AT {analysis.thumbnail.bestFrameAt.toFixed(1)}s
+          THUMBNAIL · BEST FRAME AT{" "}
+          <TimestampChip
+            seconds={analysis.thumbnail.bestFrameAt}
+            citation="thumbnail"
+          />
         </Label>
         <Heading>{analysis.thumbnail.issue}</Heading>
         <FixLine>{analysis.thumbnail.fix}</FixLine>
@@ -211,7 +246,7 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
             letterSpacing: "0.1em",
           }}
         >
-          NOTE · model-suggested, not a live trend feed (see README)
+          NOTE · model-suggested mood/genre, not a live trend feed (see README)
         </p>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
@@ -245,8 +280,7 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
           letterSpacing: "0.15em",
         }}
       >
-        Analysis complete · scored by gemini-flash-latest · Day 5 turns this
-        into the streamed reveal
+        Analysis complete · scored by gemini-flash-latest · click any timestamp to jump the video to that moment
       </motion.div>
     </motion.div>
   )
@@ -254,10 +288,10 @@ export function ReportView({ analysis }: { analysis: Analysis }) {
 
 /* ── Small atoms ──────────────────────────────────────────── */
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({ children }: { children: ReactNode }) {
   return (
     <div
-      className="font-mono text-[11px]"
+      className="font-mono text-[11px] flex items-center gap-1.5"
       style={{
         fontFamily: "var(--font-mono)",
         color: "var(--color-text-mute)",
@@ -270,7 +304,7 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-function SubLabel({ children }: { children: React.ReactNode }) {
+function SubLabel({ children }: { children: ReactNode }) {
   return (
     <div
       className="font-mono text-[10px] mb-3"
@@ -285,7 +319,7 @@ function SubLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Heading({ children }: { children: React.ReactNode }) {
+function Heading({ children }: { children: ReactNode }) {
   return (
     <h2
       className="mt-3 max-w-[820px]"
@@ -303,7 +337,7 @@ function Heading({ children }: { children: React.ReactNode }) {
   )
 }
 
-function FixLine({ children }: { children: React.ReactNode }) {
+function FixLine({ children }: { children: ReactNode }) {
   return (
     <p
       className="mt-3 max-w-[820px] text-[15px] leading-relaxed"
@@ -345,7 +379,10 @@ function Bar({ label, value }: { label: string; value: number }) {
         <span>{label}</span>
         <span style={{ color }}>{value}</span>
       </div>
-      <div className="h-1 relative" style={{ background: "rgba(255,255,255,0.06)" }}>
+      <div
+        className="h-1 relative"
+        style={{ background: "rgba(255,255,255,0.06)" }}
+      >
         <div
           className="absolute left-0 top-0 bottom-0"
           style={{ width: `${value}%`, background: color }}
@@ -403,9 +440,9 @@ function TimedItem({
   kind,
   children,
 }: {
-  time: string
+  time: ReactNode
   kind: "cut" | "deadair" | "cool"
-  children: React.ReactNode
+  children: ReactNode
 }) {
   const color =
     kind === "cut"
@@ -419,9 +456,10 @@ function TimedItem({
       style={{ borderLeft: `2px solid ${color}` }}
     >
       <div
-        className="font-mono text-[10px] mb-1.5"
+        className="mb-1.5"
         style={{
           fontFamily: "var(--font-mono)",
+          fontSize: 10,
           color,
           letterSpacing: "0.1em",
         }}
