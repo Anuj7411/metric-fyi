@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react"
 import { animate, motion, AnimatePresence } from "framer-motion"
+import { toast } from "sonner"
 import {
   APPLIED_KEYS,
   useReport,
   type AppliedKey,
 } from "@/contexts/report-context"
-import { MonoTag, Watermark } from "./atoms"
+import { pickIndex } from "@/lib/ai/derive"
+import { MonoTag } from "./atoms"
 import { ease } from "@/lib/motion"
 
 /**
@@ -196,26 +198,43 @@ export function WhatIfSimulator() {
               </motion.div>
             </AnimatePresence>
 
-            {appliedCount > 0 && !isFull && (
+            <div className="flex items-center gap-4 mt-4 flex-wrap">
+              {appliedCount > 0 && !isFull && (
+                <button
+                  onClick={resetApplied}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.15em",
+                    color: "rgba(14,13,11,0.7)",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 0",
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  RESET
+                </button>
+              )}
               <button
-                onClick={resetApplied}
+                onClick={() => copyChecklist(analysis)}
                 style={{
-                  marginTop: 14,
                   fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  letterSpacing: "0.15em",
-                  color: "rgba(14,13,11,0.7)",
-                  background: "transparent",
-                  border: "none",
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  fontWeight: 700,
+                  color: "var(--color-signal)",
+                  background: "var(--color-ink)",
+                  border: "1px solid var(--color-ink)",
                   cursor: "pointer",
-                  padding: "4px 0",
-                  textDecoration: "underline",
-                  textUnderlineOffset: 3,
+                  padding: "10px 16px",
                 }}
               >
-                RESET
+                ↗ COPY CHECKLIST
               </button>
-            )}
+            </div>
           </div>
 
           {/* Right: 4 toggle cards (2x2 desktop, stack on mobile) */}
@@ -334,6 +353,80 @@ function FixToggle({
       </span>
     </button>
   )
+}
+
+/**
+ * Build a plain-text checklist of all 4 fixes the user can paste into
+ * Notion / their editor / a sticky note. Each item names the category,
+ * the timestamp (where relevant), and the concrete fix instruction.
+ */
+function copyChecklist(analysis: {
+  score: number
+  comparison: { ceilingScore: number; inferredCategory: string }
+  hook: {
+    landsAt: number
+    fix: string
+    alternatives: Array<{ tone: string; text: string; predictedLift: number }>
+  }
+  pacing: {
+    cuts: Array<{ at: number; fix: string }>
+    deadAir: Array<{ start: number; end: number; why: string }>
+  }
+  thumbnail: { bestFrameAt: number; fix: string }
+  caption: {
+    rewrites: Array<{ tone: string; text: string; predictedLift: number }>
+  }
+}): void {
+  const pickedHook = analysis.hook.alternatives[pickIndex(analysis.hook.alternatives)]
+  const pickedCaption =
+    analysis.caption.rewrites[pickIndex(analysis.caption.rewrites)]
+
+  const lines: string[] = []
+  lines.push(`METRIC.fyi RE-RECORD CHECKLIST`)
+  lines.push(
+    `Current ${analysis.score} → Ceiling ${analysis.comparison.ceilingScore} · ${analysis.comparison.inferredCategory}`,
+  )
+  lines.push(``)
+  lines.push(`☐ HOOK · lands at ${analysis.hook.landsAt.toFixed(1)}s`)
+  lines.push(`   ${analysis.hook.fix}`)
+  if (pickedHook) {
+    lines.push(
+      `   New line (${pickedHook.tone}, +${pickedHook.predictedLift}%): "${pickedHook.text}"`,
+    )
+  }
+  lines.push(``)
+  lines.push(`☐ PACING · ${analysis.pacing.cuts.length + analysis.pacing.deadAir.length} edits`)
+  for (const c of analysis.pacing.cuts) {
+    lines.push(`   • ${c.at.toFixed(1)}s — ${c.fix}`)
+  }
+  for (const d of analysis.pacing.deadAir) {
+    lines.push(
+      `   • ${d.start.toFixed(1)}–${d.end.toFixed(1)}s dead air — ${d.why}`,
+    )
+  }
+  lines.push(``)
+  lines.push(`☐ THUMBNAIL · best frame at ${analysis.thumbnail.bestFrameAt.toFixed(1)}s`)
+  lines.push(`   ${analysis.thumbnail.fix}`)
+  lines.push(``)
+  lines.push(`☐ CAPTION`)
+  if (pickedCaption) {
+    lines.push(
+      `   New caption (${pickedCaption.tone}, +${pickedCaption.predictedLift}%): "${pickedCaption.text}"`,
+    )
+  }
+  lines.push(``)
+  lines.push(`— METRIC.fyi · re-record with this list, then re-score.`)
+
+  const text = lines.join("\n")
+  navigator.clipboard
+    ?.writeText(text)
+    .then(() =>
+      toast.success("Checklist copied", {
+        description: "Paste into Notion / your editor.",
+        duration: 3000,
+      }),
+    )
+    .catch(() => toast.error("Copy failed"))
 }
 
 function subtitleFor(

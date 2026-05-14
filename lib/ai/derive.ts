@@ -149,6 +149,44 @@ export function deriveAudioMatches(count: number): string[] {
 }
 
 /**
+ * Optimal post-time recommendation.
+ *
+ * Maps the AI's `inferredCategory` to a reasonable peak-engagement window
+ * based on publicly reported TikTok engagement curves (Hootsuite/Sprout
+ * Social aggregates). Per-creator analytics would beat this, but as a
+ * model-grounded default it's a useful steer.
+ *
+ * Honestly labeled in the UI as "MODEL-SUGGESTED · USE YOUR ANALYTICS
+ * FOR PERSONALIZED TIMING" — same scope-cut framing as the trending
+ * audio recommendations.
+ */
+const POST_TIMES: Array<{ match: RegExp; day: string; time: string }> = [
+  { match: /grwm|morning|routine/i, day: "SUN", time: "8PM" },
+  { match: /cook|recipe|food|asmr.*food/i, day: "SAT", time: "11AM" },
+  { match: /dance|music|trend|sound/i, day: "FRI", time: "7PM" },
+  { match: /tech|review|app|product|software/i, day: "TUE", time: "6PM" },
+  { match: /comedy|skit|reaction/i, day: "WED", time: "9PM" },
+  { match: /sport|gym|fitness|workout/i, day: "MON", time: "6AM" },
+  { match: /diy|craft|tutorial/i, day: "SUN", time: "2PM" },
+  { match: /finance|business|career/i, day: "TUE", time: "12PM" },
+]
+
+const DEFAULT_POST_TIME = { day: "TUE", time: "6PM" }
+
+export function derivePostTime(inferredCategory: string): {
+  day: string
+  time: string
+} {
+  const cat = inferredCategory ?? ""
+  for (const entry of POST_TIMES) {
+    if (entry.match.test(cat)) {
+      return { day: entry.day, time: entry.time }
+    }
+  }
+  return DEFAULT_POST_TIME
+}
+
+/**
  * For "vs MEDIAN" the design wants a second comparison number. Our schema
  * only has `vsCategoryMedian`. Synthesize a "vs platform median" by
  * splitting the delta — category delta is usually 1.5-2× harsher than

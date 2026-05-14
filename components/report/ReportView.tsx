@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { useReport, type AppliedKey } from "@/contexts/report-context"
 import {
   deriveAudioMatches,
+  derivePostTime,
   deriveVsMedian,
   isBarHot,
   pickIndex,
@@ -27,23 +28,65 @@ export function ReportView({ videoUrl }: { videoUrl: string }) {
   const { analysis } = useReport()
   if (!analysis) return null
 
+  // Cascading section reveal — each section fades + slides up in sequence
+  // on mount. Total runtime ~3.2s from Hero appearing to Trending landing.
+  // This is the Day 4 "streaming analysis reveal" differentiator made
+  // visible — when PendingClient hands off to ReportView, the sections
+  // don't all appear at once; they cascade like the analysis is finishing
+  // in real time. The Loom shot lives here.
+  const cascadeVariants = {
+    animate: {
+      transition: {
+        staggerChildren: 0.36,
+        delayChildren: 0.15,
+      },
+    },
+  }
+  const sectionVariants = {
+    initial: { opacity: 0, y: 18 },
+    animate: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.55, ease: easeCurve },
+    },
+  }
+
   return (
-    <div
+    <motion.div
+      initial="initial"
+      animate="animate"
+      variants={cascadeVariants}
       style={{
         background: "var(--color-ink)",
         color: "var(--color-text)",
         fontFamily: "var(--font-sans)",
       }}
     >
-      <Hero analysis={analysis} />
-      <VideoSection videoUrl={videoUrl} />
-      <FixHook analysis={analysis} />
-      <FixPacing analysis={analysis} />
-      <FixThumbnail analysis={analysis} videoUrl={videoUrl} />
-      <FixCaption analysis={analysis} />
-      <WhatIfSimulator />
-      <Trending analysis={analysis} />
-    </div>
+      <motion.div variants={sectionVariants}>
+        <Hero analysis={analysis} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <VideoSection videoUrl={videoUrl} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <FixHook analysis={analysis} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <FixPacing analysis={analysis} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <FixThumbnail analysis={analysis} videoUrl={videoUrl} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <FixCaption analysis={analysis} />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <WhatIfSimulator />
+      </motion.div>
+      <motion.div variants={sectionVariants}>
+        <Trending analysis={analysis} />
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -53,6 +96,7 @@ export function ReportView({ videoUrl }: { videoUrl: string }) {
 
 function Hero({ analysis }: { analysis: Analysis }) {
   const vsMedian = deriveVsMedian(analysis.comparison.vsCategoryMedian)
+  const postTime = derivePostTime(analysis.comparison.inferredCategory)
   const bars = [
     { l: "HOOK", v: analysis.breakdown.hook },
     { l: "PACING", v: analysis.breakdown.pacing },
@@ -84,6 +128,20 @@ function Hero({ analysis }: { analysis: Analysis }) {
               }}
             >
               JUST NOW
+            </span>
+            <span
+              title="Model-suggested peak engagement window — use your own analytics for personalized timing"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "var(--color-signal)",
+                letterSpacing: "0.15em",
+                border: "1px solid var(--color-signal)",
+                padding: "3px 8px",
+                cursor: "help",
+              }}
+            >
+              POST · {postTime.day} {postTime.time}
             </span>
           </div>
 
