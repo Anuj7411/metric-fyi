@@ -1,7 +1,8 @@
 "use client"
 
+import { motion, AnimatePresence } from "framer-motion"
 import { toast } from "sonner"
-import { useReport } from "@/contexts/report-context"
+import { useReport, type AppliedKey } from "@/contexts/report-context"
 import {
   deriveAudioMatches,
   deriveVsMedian,
@@ -11,7 +12,8 @@ import {
 } from "@/lib/ai/derive"
 import type { Analysis } from "@/lib/ai/schema"
 import { useVideoFrames } from "@/hooks/useVideoFrames"
-import { MonoTag, Pill, Watermark, btnStyle } from "./atoms"
+import { dur, ease as easeCurve } from "@/lib/motion"
+import { AppliedBadge, MonoTag, Pill, Watermark, btnStyle } from "./atoms"
 import { VideoSection } from "./VideoPlayer"
 import { WhatIfSimulator } from "./WhatIfSimulator"
 
@@ -266,6 +268,7 @@ function FixHook({ analysis }: { analysis: Analysis }) {
     <FixSectionShell
       number="01"
       cat="HOOK"
+      appliedKey="hook"
       timeLabel={`LANDS AT ${analysis.hook.landsAt.toFixed(1)}s`}
       timeColor={hot ? "var(--color-hot)" : "var(--color-signal)"}
       diagnosis={analysis.hook.issue}
@@ -308,7 +311,12 @@ function FixPacing({ analysis }: { analysis: Analysis }) {
   ]
 
   return (
-    <FixSectionShell number="02" cat="PACING" diagnosis={analysis.pacing.note}>
+    <FixSectionShell
+      number="02"
+      cat="PACING"
+      appliedKey="pacing"
+      diagnosis={analysis.pacing.note}
+    >
       <div
         className="mt-6 flex flex-col"
         style={{ background: "var(--color-line)", gap: 1 }}
@@ -398,6 +406,7 @@ function FixThumbnail({
   analysis: Analysis
   videoUrl: string
 }) {
+  const { applied } = useReport()
   // Extract two real frames from the source video:
   //   [0] = current cover frame (just past 0s to dodge black opening)
   //   [1] = the AI's proposed best-frame timestamp
@@ -413,25 +422,44 @@ function FixThumbnail({
     <FixSectionShell
       number="03"
       cat="THUMBNAIL"
+      appliedKey="thumbnail"
       timeLabel={`BEST FRAME AT ${bestT.toFixed(1)}s`}
       timeColor="var(--color-signal)"
       diagnosis={analysis.thumbnail.issue}
       rightCol={
-        <div className="grid grid-cols-2 gap-3 mt-4 md:mt-0">
-          <ThumbBox
-            label="CURRENT"
-            sub="FRAME 0 · GENERIC"
-            hot
-            imageUrl={extracted[0]}
-            fallback="Frame 0"
-          />
-          <ThumbBox
-            label="PROPOSED"
-            sub={`FRAME ${bestT.toFixed(1)}s`}
-            good
-            imageUrl={extracted[1]}
-            fallback="Best frame"
-          />
+        <div
+          className="grid grid-cols-2 gap-3 mt-4 md:mt-0"
+          style={{ transition: "opacity 320ms cubic-bezier(.2,.8,.2,1)" }}
+        >
+          <div
+            style={{
+              opacity: applied.thumbnail ? 0.3 : 1,
+              filter: applied.thumbnail ? "grayscale(0.5)" : "none",
+              transition: "opacity 320ms, filter 320ms",
+            }}
+          >
+            <ThumbBox
+              label="CURRENT"
+              sub="FRAME 0 · GENERIC"
+              hot
+              imageUrl={extracted[0]}
+              fallback="Frame 0"
+            />
+          </div>
+          <div
+            style={{
+              transform: applied.thumbnail ? "scale(1.04)" : "scale(1)",
+              transition: "transform 320ms cubic-bezier(.2,.8,.2,1)",
+            }}
+          >
+            <ThumbBox
+              label={applied.thumbnail ? "USING THIS FRAME" : "PROPOSED"}
+              sub={`FRAME ${bestT.toFixed(1)}s`}
+              good
+              imageUrl={extracted[1]}
+              fallback="Best frame"
+            />
+          </div>
         </div>
       }
     >
@@ -445,70 +473,149 @@ function FixThumbnail({
    ───────────────────────────────────────────────────────────── */
 
 function FixCaption({ analysis }: { analysis: Analysis }) {
+  const { applied } = useReport()
   const pick = pickIndex(analysis.caption.rewrites)
+  const picked = analysis.caption.rewrites[pick]
   const deadWordsLower = analysis.caption.deadWords.map((w) => w.toLowerCase())
+  const isApplied = applied.caption
 
   return (
-    <FixSectionShell number="04" cat="CAPTION" diagnosis={null}>
-      <MonoTag>ORIGINAL CAPTION</MonoTag>
-      <div
-        className="mt-3 max-w-[920px]"
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "clamp(16px, 2vw, 24px)",
-          lineHeight: 1.45,
-          color: "var(--color-text)",
-        }}
-      >
-        {analysis.caption.original.split(" ").map((w, i) => {
-          const clean = w.replace(/[.,!?]/g, "").toLowerCase()
-          const dead = deadWordsLower.includes(clean)
-          return (
-            <span key={i}>
-              {dead ? (
-                <span
-                  style={{
-                    background: "var(--color-hot-tint)",
-                    color: "var(--color-hot)",
-                    padding: "1px 4px",
-                    textDecoration: "line-through",
-                    textDecorationColor: "rgba(255,74,28,0.6)",
-                  }}
-                >
-                  {w}
-                </span>
-              ) : (
-                w
-              )}{" "}
-            </span>
-          )
-        })}
-      </div>
-      {analysis.caption.deadWords.length > 0 && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--color-hot)",
-            letterSpacing: "0.18em",
-            marginTop: 12,
-          }}
-        >
-          {analysis.caption.deadWords.length} DEAD WORD ·{" "}
-          {analysis.caption.deadWords.join(" · ").toUpperCase()}
-        </div>
-      )}
-      <div className="mt-8">
-        <MonoTag>3 REWRITES</MonoTag>
-        <RewritesGrid
-          rewrites={analysis.caption.rewrites.map((r) => ({
-            tone: r.tone,
-            text: r.text,
-            predictedLift: r.predictedLift,
-          }))}
-          pickIdx={pick}
-        />
-      </div>
+    <FixSectionShell
+      number="04"
+      cat="CAPTION"
+      appliedKey="caption"
+      diagnosis={null}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {isApplied ? (
+          <motion.div
+            key="applied"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: dur.element, ease: easeCurve }}
+          >
+            <MonoTag color="var(--color-signal)">YOUR NEW CAPTION</MonoTag>
+            <div
+              className="mt-3 max-w-[920px]"
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "clamp(20px, 2.4vw, 28px)",
+                lineHeight: 1.4,
+                color: "var(--color-text)",
+                letterSpacing: "-0.005em",
+              }}
+            >
+              &ldquo;{picked.text}&rdquo;
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-signal)",
+                letterSpacing: "0.15em",
+                marginTop: 14,
+              }}
+            >
+              +{picked.predictedLift}% PREDICTED LIFT ·{" "}
+              {picked.tone.toUpperCase()}
+            </div>
+            <p
+              className="mt-6 max-w-[640px]"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-mute)",
+                letterSpacing: "0.05em",
+                lineHeight: 1.6,
+              }}
+            >
+              ↳ Original below for reference
+            </p>
+            <div
+              className="mt-2 max-w-[820px] opacity-50"
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 15,
+                lineHeight: 1.5,
+                color: "var(--color-text-dim)",
+                textDecoration: "line-through",
+                textDecorationColor: "rgba(168,160,146,0.5)",
+              }}
+            >
+              {analysis.caption.original}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="original"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: dur.element, ease: easeCurve }}
+          >
+            <MonoTag>ORIGINAL CAPTION</MonoTag>
+            <div
+              className="mt-3 max-w-[920px]"
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "clamp(16px, 2vw, 24px)",
+                lineHeight: 1.45,
+                color: "var(--color-text)",
+              }}
+            >
+              {analysis.caption.original.split(" ").map((w, i) => {
+                const clean = w.replace(/[.,!?]/g, "").toLowerCase()
+                const dead = deadWordsLower.includes(clean)
+                return (
+                  <span key={i}>
+                    {dead ? (
+                      <span
+                        style={{
+                          background: "var(--color-hot-tint)",
+                          color: "var(--color-hot)",
+                          padding: "1px 4px",
+                          textDecoration: "line-through",
+                          textDecorationColor: "rgba(255,74,28,0.6)",
+                        }}
+                      >
+                        {w}
+                      </span>
+                    ) : (
+                      w
+                    )}{" "}
+                  </span>
+                )
+              })}
+            </div>
+            {analysis.caption.deadWords.length > 0 && (
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--color-hot)",
+                  letterSpacing: "0.18em",
+                  marginTop: 12,
+                }}
+              >
+                {analysis.caption.deadWords.length} DEAD WORD ·{" "}
+                {analysis.caption.deadWords.join(" · ").toUpperCase()}
+              </div>
+            )}
+            <div className="mt-8">
+              <MonoTag>3 REWRITES</MonoTag>
+              <RewritesGrid
+                rewrites={analysis.caption.rewrites.map((r) => ({
+                  tone: r.tone,
+                  text: r.text,
+                  predictedLift: r.predictedLift,
+                }))}
+                pickIdx={pick}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </FixSectionShell>
   )
 }
@@ -818,6 +925,7 @@ function Trending({ analysis }: { analysis: Analysis }) {
 function FixSectionShell({
   number,
   cat,
+  appliedKey,
   timeLabel,
   timeColor,
   diagnosis,
@@ -826,28 +934,60 @@ function FixSectionShell({
 }: {
   number: string
   cat: string
+  /** When set, the section pulls applied[key] from context to drive the badge + accent. */
+  appliedKey?: AppliedKey
   timeLabel?: string
   timeColor?: string
   diagnosis: string | null
   rightCol?: React.ReactNode
   children: React.ReactNode
 }) {
+  const { applied } = useReport()
+  const isApplied = appliedKey ? applied[appliedKey] : false
   const isHot = cat === "HOOK"
   const hasRight = !!rightCol
 
   return (
     <section
       className="relative overflow-hidden border-b px-6 md:px-14 py-12 md:py-18"
-      style={{ borderColor: "var(--color-line)" }}
+      style={{
+        borderColor: "var(--color-line)",
+        background: isApplied
+          ? "linear-gradient(90deg, rgba(198,255,61,0.05) 0%, rgba(198,255,61,0.015) 25%, transparent 50%)"
+          : "transparent",
+        transition: "background 360ms cubic-bezier(.2,.8,.2,1)",
+      }}
     >
       <Watermark size={620} opacity={0.045} right={-80} top={-100}>
         {number}
       </Watermark>
 
+      {/* Subtle lime accent strip on the very left edge when applied */}
+      <AnimatePresence>
+        {isApplied && (
+          <motion.div
+            aria-hidden
+            initial={{ scaleY: 0, opacity: 0 }}
+            animate={{ scaleY: 1, opacity: 1 }}
+            exit={{ scaleY: 0, opacity: 0 }}
+            transition={{ duration: 0.32, ease: easeCurve }}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              background: "var(--color-signal)",
+              transformOrigin: "center",
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <div
         className={`relative grid grid-cols-1 ${hasRight ? "md:grid-cols-[140px_1fr_minmax(200px,_320px)]" : "md:grid-cols-[140px_1fr]"} gap-6 md:gap-12 items-start`}
       >
-        {/* Left rail — number + category pill */}
+        {/* Left rail — number + category pill + APPLIED badge */}
         <div className="md:border-r md:pr-8" style={{ borderColor: "var(--color-line)" }}>
           <div
             style={{
@@ -876,6 +1016,19 @@ function FixSectionShell({
               {timeLabel}
             </div>
           )}
+          <AnimatePresence>
+            {isApplied && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.28, ease: easeCurve }}
+                style={{ marginTop: 14 }}
+              >
+                <AppliedBadge />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Middle — diagnosis + provided children */}

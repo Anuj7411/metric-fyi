@@ -122,6 +122,28 @@ export function btnStyle(
   }
 }
 
+/* ── AppliedBadge — small lime pill shown when a fix is applied ─ */
+
+export function AppliedBadge() {
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 9,
+        letterSpacing: "0.18em",
+        background: "var(--color-signal)",
+        color: "var(--color-ink)",
+        padding: "4px 8px",
+        display: "inline-block",
+        fontWeight: 700,
+        textTransform: "uppercase",
+      }}
+    >
+      ✓ APPLIED
+    </span>
+  )
+}
+
 /* ── Format seconds as M:SS ──────────────────────────────────── */
 
 export function fmtTime(seconds: number): string {
