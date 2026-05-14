@@ -83,7 +83,14 @@ COMPARISON:
 - 'ceilingScore' = what this video could score if every fix were applied. Always >= the headline score.
 
 TRENDING:
-- 'audio' = up to 3 sound names that fit this content. Be specific (artist + track name when possible).
+- 'audio' = up to 3 sound MOODS/GENRES, not specific tracks. Examples:
+  • "tension-building cinematic synth with low-end drum hits"
+  • "upbeat 2020s pop with handclaps and a female vocal"
+  • "lo-fi hip-hop with vinyl crackle and a slow piano loop"
+  DO NOT invent specific track names, artists, or song titles — that data
+  isn't available to you and any specific track would be a hallucination.
+  The creator picks a matching real sound from TikTok's library themselves.
+  The 'name' field holds your mood/genre description.
 - 'hashtags' = up to 5 hashtags (start each with #). Mix one broad (#fyp) with niche ones.
 - For both: 'why' must justify the pick against the actual video content, not generic SEO.
 
