@@ -1,6 +1,4 @@
 import { ImageResponse } from "next/og"
-import { readFile } from "node:fs/promises"
-import { join } from "node:path"
 import { createClient } from "@/lib/supabase/server"
 import { Analysis } from "@/lib/ai/schema"
 
@@ -92,11 +90,11 @@ export default async function Image({
       ? data.verdict.slice(0, 137).trimEnd() + "…"
       : data.verdict
 
-  // Clash Display — loaded from public/fonts. System serif italic fallback
-  // for the editorial verdict (avoids loading a second font in the OG path).
-  const clashData = await readFile(
-    join(process.cwd(), "public/fonts/ClashDisplay-Variable.ttf"),
-  )
+  // System fonts only — Vercel doesn't bundle public/ into serverless
+  // function output, so fs reads of public/fonts/ fail with ENOENT at
+  // runtime. Using a system sans + serif stack keeps the OG image
+  // working everywhere with zero font payload. Production polish (Day 10)
+  // can switch to fetching the font from the deployed URL.
 
   // Colors (same tokens as the app)
   const INK = "#0E0D0B"
@@ -118,7 +116,8 @@ export default async function Image({
           flexDirection: "column",
           padding: 64,
           position: "relative",
-          fontFamily: '"Clash Display"',
+          fontFamily:
+            '-apple-system, "Helvetica Neue", "Segoe UI", Roboto, system-ui, sans-serif',
         }}
       >
         {/* Faint background grid */}
@@ -292,14 +291,6 @@ export default async function Image({
     ),
     {
       ...size,
-      fonts: [
-        {
-          name: "Clash Display",
-          data: clashData,
-          style: "normal",
-          weight: 600,
-        },
-      ],
     },
   )
 }
