@@ -1,8 +1,9 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useReport } from "@/contexts/report-context"
 import { deriveFrames, deriveMarkers, type Marker } from "@/lib/ai/derive"
+import { useVideoFrames } from "@/hooks/useVideoFrames"
 import { MonoTag, Pill, Watermark, fmtTime } from "./atoms"
 
 /**
@@ -75,11 +76,27 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
     v.paused ? v.play().catch(() => {}) : v.pause()
   }, [videoRef])
 
+  // Frame extraction has to be called unconditionally (rules of hooks),
+  // so it's computed even when analysis is null. derivedFrames returns []
+  // in that case so the hook just no-ops.
+  const safeDuration = duration || 30
+  const markers = useMemo(
+    () => (analysis ? deriveMarkers(analysis) : []),
+    [analysis],
+  )
+  const frames = useMemo(
+    () => (analysis ? deriveFrames(analysis, safeDuration) : []),
+    [analysis, safeDuration],
+  )
+  const frameTimestamps = useMemo(() => frames.map((f) => f.t), [frames])
+  const extractedFrames = useVideoFrames(videoUrl, frameTimestamps, {
+    maxWidth: 180,
+    quality: 0.6,
+  })
+
   if (!analysis) return null
 
-  const markers = deriveMarkers(analysis)
-  const frames = deriveFrames(analysis, duration || 30)
-  const dur = duration || 30
+  const dur = safeDuration
   const pct = (t: number) => Math.min(100, Math.max(0, (t / dur) * 100))
 
   return (
@@ -251,58 +268,114 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
             border: "1px solid var(--color-line)",
           }}
         >
-          {/* Frame thumbnail row — desktop only (mobile saves space) */}
-          <div className="hidden md:flex gap-1.5 h-[88px]">
-            {frames.map((f, i) => (
-              <button
-                key={i}
-                onClick={() => seekTo(f.t)}
-                title={`${f.t.toFixed(1)}s · ${f.label}`}
-                className="relative flex-1 overflow-hidden cursor-pointer"
-                style={{
-                  background: f.hot
-                    ? "linear-gradient(180deg, rgba(255,74,28,0.25), rgba(0,0,0,0.7))"
-                    : f.good
-                      ? "linear-gradient(180deg, rgba(198,255,61,0.25), rgba(0,0,0,0.7))"
-                      : "linear-gradient(180deg, #2a3142, #131726)",
-                  outline: f.hot
-                    ? "1px solid var(--color-hot)"
-                    : f.good
-                      ? "1px solid var(--color-signal)"
-                      : "1px solid var(--color-line)",
-                  border: "none",
-                  padding: 0,
-                }}
-              >
-                <div
-                  className="absolute top-1.5 left-1.5"
+          {/* Frame thumbnail row — desktop only (mobile saves space).
+              Real frames are extracted client-side via useVideoFrames; while
+              the extraction is in flight we show a tinted gradient
+              placeholder so the row never looks empty. */}
+          <div className="hidden md:flex gap-1.5 h-[100px]">
+            {frames.map((f, i) => {
+              const dataUrl = extractedFrames[i]
+              const accent = f.hot
+                ? "var(--color-hot)"
+                : f.good
+                  ? "var(--color-signal)"
+                  : "var(--color-line)"
+              return (
+                <button
+                  key={i}
+                  onClick={() => seekTo(f.t)}
+                  title={`${f.t.toFixed(1)}s · ${f.label}`}
+                  className="relative flex-1 overflow-hidden cursor-pointer"
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 9,
-                    color: f.hot
-                      ? "var(--color-hot)"
-                      : f.good
-                        ? "var(--color-signal)"
-                        : "rgba(255,255,255,0.5)",
-                    letterSpacing: "0.1em",
+                    background: dataUrl
+                      ? "#000"
+                      : f.hot
+                        ? "linear-gradient(180deg, rgba(255,74,28,0.25), rgba(0,0,0,0.7))"
+                        : f.good
+                          ? "linear-gradient(180deg, rgba(198,255,61,0.25), rgba(0,0,0,0.7))"
+                          : "linear-gradient(180deg, #2a3142, #131726)",
+                    outline: `1px solid ${accent}`,
+                    border: "none",
+                    padding: 0,
                   }}
                 >
-                  {f.t.toFixed(1)}s
-                </div>
-                <div
-                  className="absolute bottom-1.5 left-1.5 right-1.5 truncate"
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 8,
-                    color: "rgba(255,255,255,0.85)",
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {f.label}
-                </div>
-              </button>
-            ))}
+                  {/* Real extracted frame */}
+                  {dataUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={dataUrl}
+                      alt=""
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        opacity: 0.92,
+                      }}
+                    />
+                  )}
+                  {/* Dim gradient overlay for label readability */}
+                  {dataUrl && (
+                    <div
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background:
+                          "linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.7) 100%)",
+                      }}
+                    />
+                  )}
+                  {/* Hot/good color wash overlay on the actual frame */}
+                  {dataUrl && (f.hot || f.good) && (
+                    <div
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: f.hot
+                          ? "linear-gradient(180deg, rgba(255,74,28,0.32), transparent 35%)"
+                          : "linear-gradient(180deg, rgba(198,255,61,0.28), transparent 35%)",
+                        mixBlendMode: "screen",
+                      }}
+                    />
+                  )}
+                  <div
+                    className="absolute top-1.5 left-1.5 z-10"
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 9,
+                      color: f.hot
+                        ? "var(--color-hot)"
+                        : f.good
+                          ? "var(--color-signal)"
+                          : dataUrl
+                            ? "rgba(255,255,255,0.9)"
+                            : "rgba(255,255,255,0.5)",
+                      letterSpacing: "0.1em",
+                      textShadow: dataUrl ? "0 1px 2px rgba(0,0,0,0.6)" : "none",
+                    }}
+                  >
+                    {f.t.toFixed(1)}s
+                  </div>
+                  <div
+                    className="absolute bottom-1.5 left-1.5 right-1.5 truncate z-10"
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 8,
+                      color: "rgba(255,255,255,0.95)",
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      textShadow: "0 1px 2px rgba(0,0,0,0.7)",
+                    }}
+                  >
+                    {f.label}
+                  </div>
+                </button>
+              )
+            })}
           </div>
 
           {/* Scrubber with markers + playhead */}
