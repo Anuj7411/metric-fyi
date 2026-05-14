@@ -33,6 +33,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# prompt-iteration test rig — videos and dumped Gemini JSON outputs,
+# not part of the shipped app
+/tests/videos/
+/tests/outputs/
+
 # vercel
 .vercel
 

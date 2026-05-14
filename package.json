@@ -10,7 +10,8 @@
     "logs:sync": "bash scripts/sync-logs.sh",
     "db:link": "supabase link --project-ref kjqwjilhxzeqkdydtsoj",
     "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --project-id kjqwjilhxzeqkdydtsoj > lib/db/types.ts"
+    "db:types": "supabase gen types typescript --project-id kjqwjilhxzeqkdydtsoj > lib/db/types.ts",
+    "test:analyze": "tsx scripts/test-analyze.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -47,6 +48,7 @@
     "postcss": "^8.5",
     "supabase": "^2.98.2",
     "tailwindcss": "^4.1.9",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "pnpm": {
