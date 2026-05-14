@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -50,6 +51,23 @@ export function citationId(c: Citation): CitationId {
   }
 }
 
+/**
+ * The 4 fix keys driving the What If? simulator. Each toggle in
+ * WhatIfSimulator flips one of these; other sections (FixThumbnail,
+ * caption, etc) can read `applied[key]` to coordinate their own
+ * "fixed" rendering state.
+ */
+export const APPLIED_KEYS = ["hook", "pacing", "thumbnail", "caption"] as const
+export type AppliedKey = (typeof APPLIED_KEYS)[number]
+export type AppliedState = Record<AppliedKey, boolean>
+
+const INITIAL_APPLIED: AppliedState = {
+  hook: false,
+  pacing: false,
+  thumbnail: false,
+  caption: false,
+}
+
 type ReportContextValue = {
   /** Attach to the <video> element in VideoPlayer. */
   videoRef: RefObject<HTMLVideoElement | null>
@@ -60,6 +78,14 @@ type ReportContextValue = {
   /** The analysis JSON. Null while pending/analyzing. */
   analysis: Analysis | null
   setAnalysis: (a: Analysis | null) => void
+  /** Which fixes the user has toggled on in the What If? simulator. */
+  applied: AppliedState
+  /** Flip one fix's state. */
+  toggleApplied: (key: AppliedKey) => void
+  /** Clear all applied fixes back to default. */
+  resetApplied: () => void
+  /** Cached count of true entries in `applied` (0–4). */
+  appliedCount: number
 }
 
 const ReportContext = createContext<ReportContextValue | null>(null)
@@ -75,7 +101,21 @@ export function ReportProvider({
   const [analysis, setAnalysis] = useState<Analysis | null>(initialAnalysis)
   const [activeCitationId, setActiveCitationId] =
     useState<CitationId | null>(null)
+  const [applied, setApplied] = useState<AppliedState>(INITIAL_APPLIED)
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const toggleApplied = useCallback((key: AppliedKey) => {
+    setApplied((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
+  const resetApplied = useCallback(() => {
+    setApplied(INITIAL_APPLIED)
+  }, [])
+
+  const appliedCount = useMemo(
+    () => APPLIED_KEYS.reduce((n, k) => n + (applied[k] ? 1 : 0), 0),
+    [applied],
+  )
 
   const seekTo = useCallback(
     (seconds: number, citation?: CitationId) => {
@@ -106,6 +146,10 @@ export function ReportProvider({
         activeCitationId,
         analysis,
         setAnalysis,
+        applied,
+        toggleApplied,
+        resetApplied,
+        appliedCount,
       }}
     >
       {children}

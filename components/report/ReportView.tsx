@@ -13,6 +13,7 @@ import type { Analysis } from "@/lib/ai/schema"
 import { useVideoFrames } from "@/hooks/useVideoFrames"
 import { MonoTag, Pill, Watermark, btnStyle } from "./atoms"
 import { VideoSection } from "./VideoPlayer"
+import { WhatIfSimulator } from "./WhatIfSimulator"
 
 /**
  * v2 report layout — Hero + VideoSection + 4 FixSections + ApplyCTA + Trending.
@@ -38,7 +39,7 @@ export function ReportView({ videoUrl }: { videoUrl: string }) {
       <FixPacing analysis={analysis} />
       <FixThumbnail analysis={analysis} videoUrl={videoUrl} />
       <FixCaption analysis={analysis} />
-      <ApplyCTA analysis={analysis} />
+      <WhatIfSimulator />
       <Trending analysis={analysis} />
     </div>
   )
