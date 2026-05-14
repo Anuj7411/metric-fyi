@@ -1,34 +1,22 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useReport, type CitationId } from "@/contexts/report-context"
+import { useReport } from "@/contexts/report-context"
+import { deriveFrames, deriveMarkers, type Marker } from "@/lib/ai/derive"
+import { MonoTag, Pill, Watermark, fmtTime } from "./atoms"
 
 /**
- * Custom video player with a unified scrubber + annotation overlay.
+ * v2 video section: video + moments list + frame-thumb timeline strip.
  *
- * Native HTML5 <video> handles playback; we hide its default controls and
- * draw our own bar. Markers from the analysis sit on the same rail as the
- * playback progress, so the visual mapping is unambiguous:
- *
- *   |══════════════🟢═══|═════🔴═══|═|═════🔵═══════════════|
- *   0s                  hook       cuts + dead air         duration
- *
- * Markers (all clickable, all seek the video + light up matching chip):
- *   - Lime dot at hook.landsAt
- *   - Hot red bars spanning each pacing.deadAir range
- *   - Gold ticks at every pacing.cuts[].at
- *   - Cool blue dot at thumbnail.bestFrameAt
- *
- * Renders even when analysis is null (pending/analyzing state). Markers
- * populate when the analysis lands.
+ * Mobile-first single column; switches to a 2-column grid at md+. The
+ * video element is the same one driven by ReportContext (so timestamp
+ * chips and the moments list and frame thumbs all seek the same player).
  */
-export function VideoPlayer({ videoUrl }: { videoUrl: string }) {
+export function VideoSection({ videoUrl }: { videoUrl: string }) {
   const { videoRef, seekTo, analysis, activeCitationId } = useReport()
-  const railRef = useRef<HTMLDivElement | null>(null)
-  const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [aspectRatio, setAspectRatio] = useState<string>("16 / 9")
 
   // Wire up video element events
   useEffect(() => {
@@ -36,10 +24,7 @@ export function VideoPlayer({ videoUrl }: { videoUrl: string }) {
     if (!v) return
 
     const onMeta = () => {
-      if (v.duration && Number.isFinite(v.duration)) setDuration(v.duration)
-      if (v.videoWidth && v.videoHeight) {
-        setAspectRatio(`${v.videoWidth} / ${v.videoHeight}`)
-      }
+      if (Number.isFinite(v.duration)) setDuration(v.duration)
     }
     const onTime = () => setCurrentTime(v.currentTime)
     const onPlay = () => setIsPlaying(true)
@@ -49,9 +34,8 @@ export function VideoPlayer({ videoUrl }: { videoUrl: string }) {
     v.addEventListener("timeupdate", onTime)
     v.addEventListener("play", onPlay)
     v.addEventListener("pause", onPause)
-    // Pick up state in case events already fired before this effect ran
-    if (v.duration && Number.isFinite(v.duration)) setDuration(v.duration)
-    if (v.videoWidth) setAspectRatio(`${v.videoWidth} / ${v.videoHeight}`)
+
+    if (Number.isFinite(v.duration)) setDuration(v.duration)
     setIsPlaying(!v.paused)
     setCurrentTime(v.currentTime)
 
@@ -63,24 +47,22 @@ export function VideoPlayer({ videoUrl }: { videoUrl: string }) {
     }
   }, [videoRef])
 
-  // Keyboard shortcuts: space to play/pause, arrows to seek
+  // Keyboard: space to play/pause, ← → to seek 2s
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Don't hijack keys while the user is typing in an input
-      const target = e.target as HTMLElement | null
-      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return
+      const tgt = e.target as HTMLElement | null
+      if (tgt?.tagName === "INPUT" || tgt?.tagName === "TEXTAREA") return
       const v = videoRef.current
       if (!v) return
       if (e.code === "Space") {
         e.preventDefault()
-        if (v.paused) v.play().catch(() => {})
-        else v.pause()
+        v.paused ? v.play().catch(() => {}) : v.pause()
       } else if (e.code === "ArrowLeft") {
         e.preventDefault()
         v.currentTime = Math.max(0, v.currentTime - 2)
       } else if (e.code === "ArrowRight") {
         e.preventDefault()
-        v.currentTime = Math.min(duration, v.currentTime + 2)
+        v.currentTime = Math.min(duration || 600, v.currentTime + 2)
       }
     }
     window.addEventListener("keydown", onKey)
@@ -90,374 +72,447 @@ export function VideoPlayer({ videoUrl }: { videoUrl: string }) {
   const togglePlay = useCallback(() => {
     const v = videoRef.current
     if (!v) return
-    if (v.paused) v.play().catch(() => {})
-    else v.pause()
+    v.paused ? v.play().catch(() => {}) : v.pause()
   }, [videoRef])
 
-  // Click anywhere on the rail (that isn't a marker) -> seek to that point
-  const seekFromRailClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rail = railRef.current
-      if (!rail || duration === 0) return
-      const rect = rail.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const t = (x / rect.width) * duration
-      seekTo(t)
-    },
-    [duration, seekTo],
-  )
+  if (!analysis) return null
 
-  const pct = (t: number) =>
-    duration > 0 ? Math.min(100, Math.max(0, (t / duration) * 100)) : 0
+  const markers = deriveMarkers(analysis)
+  const frames = deriveFrames(analysis, duration || 30)
+  const dur = duration || 30
+  const pct = (t: number) => Math.min(100, Math.max(0, (t / dur) * 100))
 
   return (
-    <div className="w-full max-w-[1280px] mx-auto px-12 md:px-20 pt-8">
-      <div
-        className="relative w-full"
-        style={{
-          background: "var(--color-ink-2)",
-          border: "1px solid var(--color-line)",
-        }}
-      >
-        {/* Video itself — auto-sized to its real aspect ratio (so 9:16
-            verticals don't get black-barred). Capped width so we never
-            blow up. */}
+    <section
+      className="relative overflow-hidden border-b px-6 md:px-14 py-10 md:py-14"
+      style={{ borderColor: "var(--color-line)" }}
+    >
+      <Watermark size={420} opacity={0.025} right={32} top={20}>
+        VIDEO
+      </Watermark>
+
+      {/* Header */}
+      <div className="relative flex flex-col md:flex-row md:justify-between md:items-end mb-6 gap-3">
+        <div>
+          <MonoTag>
+            THE VIDEO · {Math.round(dur)}s RUNTIME
+          </MonoTag>
+          <h2
+            className="m-0 mt-2"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: "clamp(24px, 4vw, 42px)",
+              letterSpacing: "-0.025em",
+              lineHeight: 1.1,
+              color: "var(--color-text)",
+            }}
+          >
+            {markers.length} moments.{" "}
+            <em
+              style={{
+                fontStyle: "italic",
+                color: "var(--color-hot)",
+                fontFamily: "var(--font-italic)",
+              }}
+            >
+              {markers.filter((m) => m.hot).length} cost retention.
+            </em>
+          </h2>
+        </div>
+        <div className="flex gap-1.5 items-center">
+          <Pill color="var(--color-hot)">● HOT</Pill>
+          <Pill color="var(--color-signal)">● STRONG</Pill>
+        </div>
+      </div>
+
+      {/* Body: video + moments */}
+      <div className="relative grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-4 md:gap-6">
+        {/* Video player */}
         <div
-          className="relative w-full mx-auto"
+          className="relative overflow-hidden"
           style={{
-            maxWidth: 420,
-            aspectRatio,
-            background: "black",
+            background: "var(--color-ink-2)",
+            border: "1px solid var(--color-line)",
           }}
         >
           <video
             ref={videoRef}
             src={videoUrl}
             playsInline
+            muted
             preload="metadata"
             onClick={togglePlay}
-            className="w-full h-full"
-            style={{ display: "block", cursor: "pointer" }}
+            style={{
+              width: "100%",
+              display: "block",
+              aspectRatio: "9 / 16",
+              maxHeight: 520,
+              objectFit: "cover",
+              background: "#000",
+              cursor: "pointer",
+            }}
           />
+          {/* Play overlay */}
           {!isPlaying && (
             <button
               onClick={togglePlay}
               aria-label="Play"
-              className="absolute inset-0 flex items-center justify-center"
-              style={{ background: "rgba(0,0,0,0.25)", border: "none" }}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                background: "rgba(198,255,61,0.95)",
+                color: "var(--color-ink)",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 24,
+                fontWeight: 700,
+                paddingLeft: 6,
+              }}
             >
-              <span
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: "50%",
-                  background: "var(--color-signal)",
-                  color: "var(--color-ink)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 22,
-                  paddingLeft: 4,
-                }}
-              >
-                ▶
-              </span>
+              ▶
             </button>
           )}
+          {/* Bottom control bar */}
+          <div
+            className="absolute bottom-0 left-0 right-0 flex items-center gap-3 px-4 py-3"
+            style={{
+              background:
+                "linear-gradient(180deg, transparent, rgba(0,0,0,0.55))",
+            }}
+          >
+            <button
+              onClick={togglePlay}
+              className="flex items-center justify-center"
+              aria-label={isPlaying ? "Pause" : "Play"}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                color: "white",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                width: 28,
+                height: 28,
+              }}
+            >
+              {isPlaying ? "❚❚" : "▶"}
+            </button>
+            <div
+              className="text-[11px] tabular-nums"
+              style={{
+                fontFamily: "var(--font-mono)",
+                color: "white",
+                letterSpacing: "0.05em",
+              }}
+            >
+              {fmtTime(currentTime)} / {fmtTime(dur)}
+            </div>
+          </div>
         </div>
 
-        {/* Unified custom controls bar */}
-        <div
-          className="flex items-center gap-4 px-4 py-3"
-          style={{ borderTop: "1px solid var(--color-line)" }}
-        >
-          {/* Play/Pause */}
-          <button
-            onClick={togglePlay}
-            aria-label={isPlaying ? "Pause" : "Play"}
-            className="shrink-0 flex items-center justify-center"
-            style={{
-              width: 32,
-              height: 32,
-              background: "transparent",
-              border: "1px solid var(--color-line)",
-              color: "var(--color-text)",
-              cursor: "pointer",
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              paddingLeft: isPlaying ? 0 : 2,
-            }}
-          >
-            {isPlaying ? "❚❚" : "▶"}
-          </button>
-
-          {/* Time readout */}
+        {/* Moments list */}
+        <div className="flex flex-col">
+          <MonoTag>MOMENTS · TAP TO JUMP</MonoTag>
           <div
-            className="shrink-0 font-mono text-[11px] tabular-nums"
-            style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text-mute)",
-              letterSpacing: "0.05em",
-              minWidth: 86,
-            }}
+            className="mt-3 flex flex-col"
+            style={{ background: "var(--color-line)", gap: 1 }}
           >
-            <span style={{ color: "var(--color-text)" }}>
-              {formatTime(currentTime)}
-            </span>{" "}
-            / {formatTime(duration)}
+            {markers.map((m, i) => (
+              <MomentRow
+                key={`${m.t}-${i}`}
+                marker={m}
+                index={i}
+                currentTime={currentTime}
+                seek={(t) => {
+                  // Citation id is derived in chips, but moments map to the
+                  // same set. Use the marker's category + index to drive
+                  // visual highlight on the chip side too.
+                  if (m.cat === "HOOK") seekTo(t, "hook")
+                  else if (m.cat === "THUMBNAIL") seekTo(t, "thumbnail")
+                  else seekTo(t)
+                }}
+                activeCitationId={activeCitationId}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Timeline strip: frame thumbs + scrubber + time scale */}
+      <div className="relative mt-6">
+        <MonoTag>SCRUB · 0:00 → {fmtTime(dur)}</MonoTag>
+        <div
+          className="relative mt-3 p-4"
+          style={{
+            background: "var(--color-ink-2)",
+            border: "1px solid var(--color-line)",
+          }}
+        >
+          {/* Frame thumbnail row — desktop only (mobile saves space) */}
+          <div className="hidden md:flex gap-1.5 h-[88px]">
+            {frames.map((f, i) => (
+              <button
+                key={i}
+                onClick={() => seekTo(f.t)}
+                title={`${f.t.toFixed(1)}s · ${f.label}`}
+                className="relative flex-1 overflow-hidden cursor-pointer"
+                style={{
+                  background: f.hot
+                    ? "linear-gradient(180deg, rgba(255,74,28,0.25), rgba(0,0,0,0.7))"
+                    : f.good
+                      ? "linear-gradient(180deg, rgba(198,255,61,0.25), rgba(0,0,0,0.7))"
+                      : "linear-gradient(180deg, #2a3142, #131726)",
+                  outline: f.hot
+                    ? "1px solid var(--color-hot)"
+                    : f.good
+                      ? "1px solid var(--color-signal)"
+                      : "1px solid var(--color-line)",
+                  border: "none",
+                  padding: 0,
+                }}
+              >
+                <div
+                  className="absolute top-1.5 left-1.5"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 9,
+                    color: f.hot
+                      ? "var(--color-hot)"
+                      : f.good
+                        ? "var(--color-signal)"
+                        : "rgba(255,255,255,0.5)",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  {f.t.toFixed(1)}s
+                </div>
+                <div
+                  className="absolute bottom-1.5 left-1.5 right-1.5 truncate"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 8,
+                    color: "rgba(255,255,255,0.85)",
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {f.label}
+                </div>
+              </button>
+            ))}
           </div>
 
-          {/* The rail — single timeline with playback fill + markers */}
+          {/* Scrubber with markers + playhead */}
           <div
-            ref={railRef}
-            onClick={seekFromRailClick}
-            className="relative flex-1 cursor-pointer"
-            style={{
-              height: 24,
-              background: "rgba(255,245,210,0.06)",
-            }}
+            className="relative mt-3"
+            style={{ height: 36 }}
             role="slider"
-            aria-label="Video progress and annotations"
+            aria-label="Video scrubber with annotations"
             aria-valuemin={0}
-            aria-valuemax={duration || 100}
+            aria-valuemax={dur}
             aria-valuenow={currentTime}
           >
-            {/* Playback progress fill */}
             <div
               aria-hidden
-              className="absolute top-0 left-0 bottom-0 pointer-events-none"
+              className="absolute left-0 right-0"
               style={{
+                top: 14,
+                height: 6,
+                background: "rgba(255,255,255,0.06)",
+              }}
+            />
+            <div
+              aria-hidden
+              className="absolute left-0"
+              style={{
+                top: 14,
+                height: 6,
+                background: "var(--color-signal)",
                 width: `${pct(currentTime)}%`,
-                background: "rgba(245,241,232,0.12)",
               }}
             />
-
-            {/* Centerline so markers feel anchored to a track */}
+            {markers.map((m, i) => {
+              const color = m.hot
+                ? "var(--color-hot)"
+                : m.good
+                  ? "var(--color-signal)"
+                  : "var(--color-cool)"
+              return (
+                <button
+                  key={`scrub-${i}`}
+                  onClick={() => seekTo(m.t)}
+                  title={`${m.t.toFixed(1)}s · ${m.label}`}
+                  className="absolute cursor-pointer"
+                  style={{
+                    left: `${pct(m.t)}%`,
+                    transform: "translateX(-50%)",
+                    top: 0,
+                    bottom: 0,
+                    padding: "0 6px",
+                    background: "transparent",
+                    border: "none",
+                  }}
+                >
+                  <span
+                    className="block mx-auto"
+                    style={{
+                      width: 2,
+                      height: 36,
+                      background: color,
+                    }}
+                  />
+                  <span
+                    className="absolute"
+                    style={{
+                      top: -2,
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 9,
+                      letterSpacing: "0.1em",
+                      color,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {m.t.toFixed(1)}s
+                  </span>
+                </button>
+              )
+            })}
+            {/* Playhead */}
             <div
               aria-hidden
-              className="absolute left-0 right-0 pointer-events-none"
+              className="absolute pointer-events-none"
               style={{
-                top: "50%",
-                height: 1,
-                background: "rgba(255,245,210,0.10)",
-                marginTop: -0.5,
+                top: 8,
+                bottom: 8,
+                left: `${pct(currentTime)}%`,
+                width: 2,
+                background: "white",
+                transform: "translateX(-50%)",
+                boxShadow: "0 0 0 2px rgba(0,0,0,0.4)",
               }}
             />
-
-            {analysis && duration > 0 && (
-              <>
-                {/* Dead-air ranges — red bars on the centerline */}
-                {analysis.pacing.deadAir.map((d, i) => {
-                  const id: CitationId = `deadair-${i}`
-                  const active = activeCitationId === id
-                  return (
-                    <button
-                      key={`deadair-${i}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        seekTo(d.start, id)
-                      }}
-                      title={`${d.start.toFixed(1)}–${d.end.toFixed(1)}s · dead air · ${d.why}`}
-                      className="absolute cursor-pointer transition-opacity"
-                      style={{
-                        left: `${pct(d.start)}%`,
-                        width: `${pct(d.end - d.start)}%`,
-                        top: "50%",
-                        height: active ? 10 : 6,
-                        marginTop: active ? -5 : -3,
-                        background: "var(--color-hot)",
-                        opacity: active ? 1 : 0.7,
-                        border: "none",
-                        padding: 0,
-                      }}
-                    />
-                  )
-                })}
-
-                {/* Pacing cuts — gold ticks */}
-                {analysis.pacing.cuts.map((c, i) => {
-                  const id: CitationId = `cut-${i}`
-                  const active = activeCitationId === id
-                  return (
-                    <button
-                      key={`cut-${i}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        seekTo(c.at, id)
-                      }}
-                      title={`${c.at.toFixed(1)}s · cut · ${c.issue}`}
-                      className="absolute cursor-pointer transition-all"
-                      style={{
-                        left: `calc(${pct(c.at)}% - ${active ? 2 : 1}px)`,
-                        top: 0,
-                        bottom: 0,
-                        width: active ? 4 : 2,
-                        background: "var(--color-gold)",
-                        border: "none",
-                        padding: 0,
-                      }}
-                    />
-                  )
-                })}
-
-                {/* Hook landsAt — lime dot */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    seekTo(analysis.hook.landsAt, "hook")
-                  }}
-                  title={`${analysis.hook.landsAt.toFixed(1)}s · hook lands`}
-                  className="absolute cursor-pointer transition-transform"
-                  style={{
-                    left: `calc(${pct(analysis.hook.landsAt)}% - 7px)`,
-                    top: "50%",
-                    width: 14,
-                    height: 14,
-                    marginTop: -7,
-                    borderRadius: "50%",
-                    background: "var(--color-signal)",
-                    boxShadow:
-                      activeCitationId === "hook"
-                        ? "0 0 0 4px rgba(198,255,61,0.3)"
-                        : "0 0 0 2px rgba(14,13,11,0.9)",
-                    transform:
-                      activeCitationId === "hook" ? "scale(1.2)" : "scale(1)",
-                    border: "none",
-                    padding: 0,
-                  }}
-                />
-
-                {/* Thumbnail best frame — cool blue dot */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    seekTo(analysis.thumbnail.bestFrameAt, "thumbnail")
-                  }}
-                  title={`${analysis.thumbnail.bestFrameAt.toFixed(1)}s · best thumbnail frame`}
-                  className="absolute cursor-pointer transition-transform"
-                  style={{
-                    left: `calc(${pct(analysis.thumbnail.bestFrameAt)}% - 6px)`,
-                    top: "50%",
-                    width: 12,
-                    height: 12,
-                    marginTop: -6,
-                    borderRadius: "50%",
-                    background: "var(--color-cool)",
-                    boxShadow:
-                      activeCitationId === "thumbnail"
-                        ? "0 0 0 4px rgba(74,140,255,0.3)"
-                        : "0 0 0 2px rgba(14,13,11,0.9)",
-                    transform:
-                      activeCitationId === "thumbnail"
-                        ? "scale(1.2)"
-                        : "scale(1)",
-                    border: "none",
-                    padding: 0,
-                  }}
-                />
-
-                {/* Playhead — thin white line at currentTime, always on top */}
-                <div
-                  aria-hidden
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: `calc(${pct(currentTime)}% - 1px)`,
-                    top: -2,
-                    bottom: -2,
-                    width: 2,
-                    background: "var(--color-text)",
-                    boxShadow: "0 0 0 1px rgba(14,13,11,0.5)",
-                  }}
-                />
-              </>
-            )}
-
-            {/* If no analysis yet, still show playhead */}
-            {!analysis && duration > 0 && (
-              <div
-                aria-hidden
-                className="absolute pointer-events-none"
-                style={{
-                  left: `calc(${pct(currentTime)}% - 1px)`,
-                  top: -2,
-                  bottom: -2,
-                  width: 2,
-                  background: "var(--color-text)",
-                }}
-              />
-            )}
           </div>
-        </div>
 
-        {/* Legend + tip */}
-        {analysis && (
+          {/* Time scale */}
           <div
-            className="flex flex-wrap items-center gap-5 px-4 py-2 font-mono text-[10px]"
+            className="flex justify-between mt-2"
             style={{
               fontFamily: "var(--font-mono)",
+              fontSize: 9,
               color: "var(--color-text-mute)",
               letterSpacing: "0.1em",
-              borderTop: "1px solid var(--color-line)",
             }}
           >
-            <LegendItem
-              color="var(--color-signal)"
-              label="HOOK LANDS"
-              shape="dot"
-            />
-            <LegendItem color="var(--color-gold)" label="CUT" shape="tick" />
-            <LegendItem
-              color="var(--color-hot)"
-              label="DEAD AIR"
-              shape="bar"
-            />
-            <LegendItem
-              color="var(--color-cool)"
-              label="BEST FRAME"
-              shape="dot"
-            />
-            <span
-              className="ml-auto"
-              style={{ color: "var(--color-text-dim)" }}
-            >
-              SPACE · ◀▶ · click any marker
-            </span>
+            {scaleStops(dur).map((t) => (
+              <span key={t}>{fmtTime(t)}</span>
+            ))}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
 
-function LegendItem({
-  color,
-  label,
-  shape,
+function MomentRow({
+  marker,
+  index,
+  currentTime,
+  seek,
+  activeCitationId,
 }: {
-  color: string
-  label: string
-  shape: "dot" | "tick" | "bar"
+  marker: Marker
+  index: number
+  currentTime: number
+  seek: (t: number) => void
+  activeCitationId: string | null
 }) {
+  const isPlaying = Math.abs(currentTime - marker.t) < 1.5
+  const matchesCitation =
+    (marker.cat === "HOOK" && activeCitationId === "hook") ||
+    (marker.cat === "THUMBNAIL" && activeCitationId === "thumbnail")
+  const active = isPlaying || matchesCitation
+  const color = marker.hot
+    ? "var(--color-hot)"
+    : marker.good
+      ? "var(--color-signal)"
+      : "var(--color-cool)"
+
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        aria-hidden
+    <button
+      onClick={() => seek(marker.t)}
+      className="grid items-center text-left cursor-pointer transition-all"
+      style={{
+        gridTemplateColumns: "60px 1fr 20px",
+        gap: 14,
+        padding: "16px 18px",
+        background: active ? "var(--color-ink-2)" : "var(--color-ink)",
+        borderLeft: `3px solid ${active ? color : "transparent"}`,
+        border: "none",
+        borderLeftStyle: "solid",
+      }}
+    >
+      <div
         style={{
-          display: "inline-block",
-          background: color,
-          width: shape === "bar" ? 12 : shape === "tick" ? 2 : 8,
-          height: shape === "bar" ? 4 : 8,
-          borderRadius: shape === "dot" ? "50%" : 0,
+          fontFamily: "var(--font-mono)",
+          fontSize: 14,
+          fontWeight: 600,
+          color: marker.hot
+            ? "var(--color-hot)"
+            : marker.good
+              ? "var(--color-signal)"
+              : "var(--color-text)",
+          letterSpacing: "0.05em",
         }}
-      />
-      <span>{label}</span>
-    </span>
+      >
+        {marker.t.toFixed(1)}s
+      </div>
+      <div>
+        <div
+          style={{
+            fontSize: 14,
+            color: "var(--color-text)",
+            fontWeight: active ? 500 : 400,
+          }}
+        >
+          {marker.label}
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: marker.hot
+              ? "var(--color-hot)"
+              : marker.good
+                ? "var(--color-signal)"
+                : "var(--color-text-mute)",
+            letterSpacing: "0.15em",
+            marginTop: 3,
+          }}
+        >
+          {marker.cat}
+          {marker.hot ? " · ISSUE" : marker.good ? " · STRENGTH" : ""}
+        </div>
+      </div>
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: active ? "var(--color-signal)" : "var(--color-text-mute)",
+        }}
+      >
+        →
+      </span>
+    </button>
   )
 }
 
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00"
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, "0")}`
+function scaleStops(duration: number): number[] {
+  const targetCount = 7
+  const step = duration / (targetCount - 1)
+  return Array.from({ length: targetCount }, (_, i) => Math.round(step * i))
 }

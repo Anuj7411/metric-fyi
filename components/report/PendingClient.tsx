@@ -23,7 +23,7 @@ type Phase =
  *     during the wait keeps their playback position.
  *   - On failure, shows the error + a Retry button.
  */
-export function PendingClient({ id }: { id: string }) {
+export function PendingClient({ id, videoUrl }: { id: string; videoUrl: string }) {
   const { setAnalysis, analysis } = useReport()
   const [phase, setPhase] = useState<Phase>({ kind: "loading", elapsedMs: 0 })
   const startedAt = useRef<number>(0)
@@ -80,7 +80,7 @@ export function PendingClient({ id }: { id: string }) {
 
   // If the analysis arrived (via setAnalysis above), defer to ReportView.
   if (analysis) {
-    return <ReportView />
+    return <ReportView videoUrl={videoUrl} />
   }
 
   if (phase.kind === "error") {

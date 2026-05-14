@@ -4,7 +4,6 @@ import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { ReportView } from "@/components/report/ReportView"
 import { PendingClient } from "@/components/report/PendingClient"
-import { VideoPlayer } from "@/components/report/VideoPlayer"
 import { ReportProvider } from "@/contexts/report-context"
 import { Analysis } from "@/lib/ai/schema"
 
@@ -49,59 +48,75 @@ export default async function ReportPage({
 
   return (
     <main
-      className="flex flex-col min-h-screen relative"
+      className="flex flex-col min-h-screen"
       style={{ background: "var(--color-ink)", color: "var(--color-text)" }}
     >
       <Navigation />
 
-      <ReportProvider initialAnalysis={initialAnalysis}>
-        <div className="flex-1 flex flex-col">
-          {/* status chip — always visible at top */}
-          <div className="max-w-[1280px] mx-auto px-12 md:px-20 pt-10 w-full">
-            <div
-              className="font-mono text-[11px]"
-              style={{
-                fontFamily: "var(--font-mono)",
-                color: "var(--color-text-mute)",
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-              }}
-            >
-              REPORT · /r/{data.id.slice(0, 6)}{" "}
-              <span style={{ color: "var(--color-text-mute)" }}>·</span>{" "}
+      {/* Sub-nav status strip — sits just below the main nav, hugs the brand */}
+      <div
+        className="border-b px-6 md:px-14 py-3 flex flex-wrap items-center gap-3"
+        style={{ borderColor: "var(--color-line)" }}
+      >
+        <div
+          className="flex items-center gap-2.5"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-text-dim)",
+            letterSpacing: "0.1em",
+          }}
+        >
+          <span>REPORT · /r/{data.id.slice(0, 6)}</span>
+          <span style={{ color: "var(--color-line)" }}>·</span>
+          <span
+            className="inline-flex items-center gap-1.5"
+            style={{
+              color:
+                data.status === "ready"
+                  ? "var(--color-signal)"
+                  : data.status === "failed"
+                    ? "var(--color-hot)"
+                    : "var(--color-text-dim)",
+            }}
+          >
+            {data.status === "ready" && (
               <span
                 style={{
-                  color:
-                    data.status === "ready"
-                      ? "var(--color-signal)"
-                      : data.status === "failed"
-                        ? "var(--color-hot)"
-                        : "var(--color-text-dim)",
+                  width: 6,
+                  height: 6,
+                  background: "var(--color-signal)",
+                  borderRadius: "50%",
+                  display: "inline-block",
                 }}
-              >
-                {data.status}
-              </span>
-              <span style={{ color: "var(--color-text-mute)" }}>
-                {" "}
-                · {data.file_name}
-              </span>
-            </div>
-          </div>
-
-          {/* Video player + timeline overlay — visible across all states.
-              The player stays mounted across pending → ready transition so
-              users keep their playback position. */}
-          <VideoPlayer videoUrl={videoUrl} />
-
-          {/* Status-dependent body */}
-          {data.status === "ready" && initialAnalysis ? (
-            <ReportView />
-          ) : data.status === "failed" ? (
-            <FailedState message={data.error_message ?? "Unknown error"} />
-          ) : (
-            <PendingClient id={data.id} />
-          )}
+              />
+            )}
+            {data.status.toUpperCase()}
+          </span>
         </div>
+        <span
+          className="hidden md:inline truncate"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-text-mute)",
+            letterSpacing: "0.05em",
+            maxWidth: 320,
+          }}
+          title={data.file_name}
+        >
+          {data.file_name}
+        </span>
+      </div>
+
+      <ReportProvider initialAnalysis={initialAnalysis}>
+        {data.status === "ready" && initialAnalysis ? (
+          <ReportView videoUrl={videoUrl} />
+        ) : data.status === "failed" ? (
+          <FailedState message={data.error_message ?? "Unknown error"} />
+        ) : (
+          <PendingClient id={data.id} videoUrl={videoUrl} />
+        )}
       </ReportProvider>
 
       <Footer />
@@ -111,11 +126,11 @@ export default async function ReportPage({
 
 function FailedState({ message }: { message: string }) {
   return (
-    <div className="max-w-[1280px] mx-auto px-12 md:px-20 pt-12">
+    <div className="max-w-[1280px] mx-auto px-6 md:px-14 pt-12 pb-24">
       <div
-        className="font-mono text-[11px]"
         style={{
           fontFamily: "var(--font-mono)",
+          fontSize: 11,
           color: "var(--color-hot)",
           letterSpacing: "0.2em",
         }}
@@ -134,9 +149,10 @@ function FailedState({ message }: { message: string }) {
         Something went wrong on this video.
       </h1>
       <p
-        className="mt-4 max-w-[640px] font-mono text-[12px]"
+        className="mt-4 max-w-[640px]"
         style={{
           fontFamily: "var(--font-mono)",
+          fontSize: 12,
           color: "var(--color-text-dim)",
         }}
       >

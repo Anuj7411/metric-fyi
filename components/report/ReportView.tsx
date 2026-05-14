@@ -1,476 +1,1125 @@
 "use client"
 
-import type { ReactNode } from "react"
-import { motion } from "framer-motion"
+import { toast } from "sonner"
 import { useReport } from "@/contexts/report-context"
-import { TimestampChip } from "./TimestampChip"
-import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
+import {
+  deriveAudioMatches,
+  deriveVsMedian,
+  isBarHot,
+  pickIndex,
+  topLiftDisplay,
+} from "@/lib/ai/derive"
+import type { Analysis } from "@/lib/ai/schema"
+import { MonoTag, Pill, Watermark, btnStyle } from "./atoms"
+import { VideoSection } from "./VideoPlayer"
 
 /**
- * Renders a completed analysis from context.
+ * v2 report layout — Hero + VideoSection + 4 FixSections + ApplyCTA + Trending.
+ * Mobile-first; switches to denser desktop layout at md+.
  *
- * Reads `analysis` from <ReportProvider> rather than taking it as a prop —
- * means the same component renders both the server-side "status=ready"
- * path and the client-side "PendingClient just finished" path with zero
- * extra plumbing.
- *
- * Every timestamp displayed is wrapped in <TimestampChip>: clicking seeks
- * the video and lights up the matching marker on the timeline overlay.
- * This is Differentiator #2 (visible reasoning) made concrete.
- *
- * Day 9 redesigns the layout. The TimestampChip + ReportProvider logic
- * underneath is portable to whatever visual treatment we land on.
+ * Reads analysis from <ReportProvider>. Day 9's polish landed here.
  */
-export function ReportView() {
+export function ReportView({ videoUrl }: { videoUrl: string }) {
   const { analysis } = useReport()
   if (!analysis) return null
 
   return (
-    <motion.div
-      initial="initial"
-      animate="animate"
-      variants={staggerParent}
-      className="max-w-[1280px] mx-auto px-12 md:px-20 pb-24"
+    <div
+      style={{
+        background: "var(--color-ink)",
+        color: "var(--color-text)",
+        fontFamily: "var(--font-sans)",
+      }}
     >
-      {/* Score + verdict — the headline */}
-      <motion.section {...fadeUp} className="pt-10 pb-12">
-        <Label>VIRALITY SCORE</Label>
-        <div className="flex items-baseline gap-5 mt-2">
-          <span
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "clamp(96px, 16vw, 200px)",
-              lineHeight: 0.85,
-              letterSpacing: "-0.04em",
-              color: "var(--color-signal)",
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {analysis.score}
-          </span>
-          <span
-            className="font-mono text-sm"
-            style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text-mute)",
-              letterSpacing: "0.1em",
-            }}
-          >
-            / 100
-          </span>
-          <div
-            className="ml-auto text-right font-mono text-[10px] leading-[1.8]"
-            style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text-dim)",
-              letterSpacing: "0.1em",
-            }}
-          >
-            CATEGORY ·{" "}
-            <span style={{ color: "var(--color-text)" }}>
-              {analysis.comparison.inferredCategory.toUpperCase()}
-            </span>
-            <br />
-            vs MEDIAN ·{" "}
+      <Hero analysis={analysis} />
+      <VideoSection videoUrl={videoUrl} />
+      <FixHook analysis={analysis} />
+      <FixPacing analysis={analysis} />
+      <FixThumbnail analysis={analysis} />
+      <FixCaption analysis={analysis} />
+      <ApplyCTA analysis={analysis} />
+      <Trending analysis={analysis} />
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HERO — score + verdict + breakdown bars
+   ───────────────────────────────────────────────────────────── */
+
+function Hero({ analysis }: { analysis: Analysis }) {
+  const vsMedian = deriveVsMedian(analysis.comparison.vsCategoryMedian)
+  const bars = [
+    { l: "HOOK", v: analysis.breakdown.hook },
+    { l: "PACING", v: analysis.breakdown.pacing },
+    { l: "THUMBNAIL", v: analysis.breakdown.thumbnail },
+    { l: "CAPTION", v: analysis.breakdown.caption },
+  ]
+
+  return (
+    <section
+      className="relative overflow-hidden border-b px-6 md:px-14 py-10 md:py-14"
+      style={{ borderColor: "var(--color-line)" }}
+    >
+      <Watermark size={560} opacity={0.05} right={-30} top={-50}>
+        {analysis.score}
+      </Watermark>
+
+      <div className="relative grid grid-cols-1 md:grid-cols-[1.1fr_1fr] gap-8 md:gap-16 items-end">
+        {/* Left: score + verdict */}
+        <div>
+          <div className="flex items-center gap-2.5 mb-4 flex-wrap">
+            <MonoTag>VIRALITY · @anonymous</MonoTag>
+            <Pill>{analysis.comparison.inferredCategory}</Pill>
             <span
               style={{
-                color:
-                  analysis.comparison.vsCategoryMedian >= 0
-                    ? "var(--color-signal)"
-                    : "var(--color-hot)",
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "var(--color-text-mute)",
+                letterSpacing: "0.15em",
               }}
             >
-              {analysis.comparison.vsCategoryMedian >= 0 ? "+" : ""}
-              {analysis.comparison.vsCategoryMedian}
-            </span>
-            <br />
-            CEILING ·{" "}
-            <span style={{ color: "var(--color-signal)" }}>
-              {analysis.comparison.ceilingScore} ↑
+              JUST NOW
             </span>
           </div>
+
+          <div className="flex items-baseline gap-5">
+            <span
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 600,
+                fontSize: "clamp(140px, 22vw, 280px)",
+                lineHeight: 0.78,
+                color: "var(--color-signal)",
+                letterSpacing: "-0.05em",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {analysis.score}
+            </span>
+            <div className="pb-4">
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-mute)",
+                  letterSpacing: "0.18em",
+                }}
+              >
+                / 100
+              </div>
+              <div
+                className="mt-4 hidden sm:block"
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-dim)",
+                  letterSpacing: "0.1em",
+                  lineHeight: 1.85,
+                }}
+              >
+                vs MEDIAN ·{" "}
+                <span
+                  style={{
+                    color: vsMedian < 0 ? "var(--color-hot)" : "var(--color-signal)",
+                  }}
+                >
+                  {vsMedian >= 0 ? "+" : ""}
+                  {vsMedian}
+                </span>
+                <br />
+                vs CATEGORY ·{" "}
+                <span
+                  style={{
+                    color:
+                      analysis.comparison.vsCategoryMedian < 0
+                        ? "var(--color-hot)"
+                        : "var(--color-signal)",
+                  }}
+                >
+                  {analysis.comparison.vsCategoryMedian >= 0 ? "+" : ""}
+                  {analysis.comparison.vsCategoryMedian}
+                </span>
+                <br />
+                CEILING ·{" "}
+                <span style={{ color: "var(--color-signal)" }}>
+                  {analysis.comparison.ceilingScore} ↑
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile-only mini meta row */}
+          <div
+            className="sm:hidden grid grid-cols-3 gap-3 mt-3"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color: "var(--color-text-dim)",
+              letterSpacing: "0.08em",
+            }}
+          >
+            <span>
+              vs MEDIAN ·{" "}
+              <span style={{ color: vsMedian < 0 ? "var(--color-hot)" : "var(--color-signal)" }}>
+                {vsMedian >= 0 ? "+" : ""}
+                {vsMedian}
+              </span>
+            </span>
+            <span>
+              vs CAT ·{" "}
+              <span style={{ color: "var(--color-hot)" }}>
+                {analysis.comparison.vsCategoryMedian >= 0 ? "+" : ""}
+                {analysis.comparison.vsCategoryMedian}
+              </span>
+            </span>
+            <span>
+              CEIL ·{" "}
+              <span style={{ color: "var(--color-signal)" }}>
+                {analysis.comparison.ceilingScore}↑
+              </span>
+            </span>
+          </div>
+
+          <p
+            className="mt-6 max-w-[600px]"
+            style={{
+              fontFamily: "var(--font-italic)",
+              fontStyle: "italic",
+              fontSize: "clamp(18px, 2.2vw, 26px)",
+              lineHeight: 1.3,
+              color: "var(--color-text)",
+              letterSpacing: "-0.005em",
+            }}
+          >
+            &ldquo;{analysis.verdict}&rdquo;
+          </p>
         </div>
-        <p
-          className="mt-6 max-w-[800px]"
+
+        {/* Right: breakdown bars */}
+        <div className="flex flex-col gap-3 md:gap-4">
+          {bars.map((b) => {
+            const hot = isBarHot(b.v)
+            return (
+              <div key={b.l}>
+                <div className="flex justify-between items-baseline mb-2">
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      color: "var(--color-text-dim)",
+                      letterSpacing: "0.15em",
+                    }}
+                  >
+                    {b.l}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 600,
+                      fontSize: "clamp(24px, 3.4vw, 36px)",
+                      color: hot ? "var(--color-hot)" : "var(--color-signal)",
+                      letterSpacing: "-0.02em",
+                      lineHeight: 0.9,
+                    }}
+                  >
+                    {b.v}
+                  </span>
+                </div>
+                <div
+                  className="relative"
+                  style={{
+                    height: 4,
+                    background: "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div
+                    className="absolute top-0 bottom-0 left-0"
+                    style={{
+                      width: `${b.v}%`,
+                      background: hot ? "var(--color-hot)" : "var(--color-signal)",
+                      transition: "width 600ms cubic-bezier(.2,.8,.2,1)",
+                    }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FIX HOOK — fix 01 with top-lift numeral
+   ───────────────────────────────────────────────────────────── */
+
+function FixHook({ analysis }: { analysis: Analysis }) {
+  const pick = pickIndex(analysis.hook.alternatives)
+  const topLift = topLiftDisplay(analysis.hook.alternatives)
+  const hot = analysis.breakdown.hook < 60
+
+  return (
+    <FixSectionShell
+      number="01"
+      cat="HOOK"
+      timeLabel={`LANDS AT ${analysis.hook.landsAt.toFixed(1)}s`}
+      timeColor={hot ? "var(--color-hot)" : "var(--color-signal)"}
+      diagnosis={analysis.hook.issue}
+      rightCol={
+        <TopLiftBlock value={topLift} label="% LIFT" />
+      }
+    >
+      <FixBlock>{analysis.hook.fix}</FixBlock>
+      <RewritesGrid
+        rewrites={analysis.hook.alternatives.map((a) => ({
+          tone: a.tone,
+          text: a.text,
+          predictedLift: a.predictedLift,
+        }))}
+        pickIdx={pick}
+      />
+    </FixSectionShell>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FIX PACING — fix 02 with issue list
+   ───────────────────────────────────────────────────────────── */
+
+function FixPacing({ analysis }: { analysis: Analysis }) {
+  const { seekTo } = useReport()
+  const issues = [
+    ...analysis.pacing.cuts.map((c) => ({
+      t: `${c.at.toFixed(1)}s`,
+      seekAt: c.at,
+      head: c.issue,
+      body: c.fix,
+    })),
+    ...analysis.pacing.deadAir.map((d) => ({
+      t: `${d.start.toFixed(1)}–${d.end.toFixed(1)}s`,
+      seekAt: d.start,
+      head: "Dead air range.",
+      body: d.why,
+    })),
+  ]
+
+  return (
+    <FixSectionShell number="02" cat="PACING" diagnosis={analysis.pacing.note}>
+      <div
+        className="mt-6 flex flex-col"
+        style={{ background: "var(--color-line)", gap: 1 }}
+      >
+        {issues.map((isu, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-1 md:grid-cols-[140px_1fr_auto] gap-4 md:gap-8 p-5 md:p-7 items-start"
+            style={{ background: "var(--color-ink)" }}
+          >
+            <div>
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 500,
+                  fontSize: 28,
+                  color: "var(--color-signal)",
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1,
+                }}
+              >
+                {isu.t}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 9,
+                  color: "var(--color-text-mute)",
+                  letterSpacing: "0.18em",
+                  marginTop: 6,
+                }}
+              >
+                ISSUE 0{i + 1}
+              </div>
+            </div>
+            <div>
+              <h3
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 500,
+                  fontSize: "clamp(16px, 2vw, 22px)",
+                  lineHeight: 1.25,
+                  letterSpacing: "-0.01em",
+                  margin: 0,
+                  color: "var(--color-text)",
+                }}
+              >
+                {isu.head}
+              </h3>
+              <p
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.55,
+                  color: "var(--color-text-dim)",
+                  margin: "8px 0 0",
+                  maxWidth: 620,
+                }}
+              >
+                {isu.body}
+              </p>
+            </div>
+            <button
+              onClick={() => seekTo(isu.seekAt)}
+              style={{
+                ...btnStyle("ghost", "small"),
+                whiteSpace: "nowrap",
+                fontSize: 10,
+              }}
+            >
+              ↗ JUMP TO {isu.t}
+            </button>
+          </div>
+        ))}
+      </div>
+    </FixSectionShell>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FIX THUMBNAIL — fix 03 with current vs proposed
+   ───────────────────────────────────────────────────────────── */
+
+function FixThumbnail({ analysis }: { analysis: Analysis }) {
+  return (
+    <FixSectionShell
+      number="03"
+      cat="THUMBNAIL"
+      timeLabel={`BEST FRAME AT ${analysis.thumbnail.bestFrameAt.toFixed(1)}s`}
+      timeColor="var(--color-signal)"
+      diagnosis={analysis.thumbnail.issue}
+      rightCol={
+        <div className="grid grid-cols-2 gap-3 mt-4 md:mt-0">
+          <ThumbBox label="CURRENT" sub="FRAME 0 · GENERIC" hot>
+            <div
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 11,
+                color: "white",
+                fontWeight: 600,
+                lineHeight: 1.4,
+                textAlign: "center",
+              }}
+            >
+              Frame 0
+            </div>
+          </ThumbBox>
+          <ThumbBox
+            label="PROPOSED"
+            sub={`FRAME ${analysis.thumbnail.bestFrameAt.toFixed(1)}s`}
+            good
+          >
+            <div
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 10,
+                color: "white",
+                fontWeight: 600,
+                lineHeight: 1.3,
+                textAlign: "center",
+                position: "relative",
+                zIndex: 1,
+              }}
+            >
+              Best frame
+            </div>
+          </ThumbBox>
+        </div>
+      }
+    >
+      <FixBlock>{analysis.thumbnail.fix}</FixBlock>
+    </FixSectionShell>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FIX CAPTION — fix 04 with strikethrough deadwords
+   ───────────────────────────────────────────────────────────── */
+
+function FixCaption({ analysis }: { analysis: Analysis }) {
+  const pick = pickIndex(analysis.caption.rewrites)
+  const deadWordsLower = analysis.caption.deadWords.map((w) => w.toLowerCase())
+
+  return (
+    <FixSectionShell number="04" cat="CAPTION" diagnosis={null}>
+      <MonoTag>ORIGINAL CAPTION</MonoTag>
+      <div
+        className="mt-3 max-w-[920px]"
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: "clamp(16px, 2vw, 24px)",
+          lineHeight: 1.45,
+          color: "var(--color-text)",
+        }}
+      >
+        {analysis.caption.original.split(" ").map((w, i) => {
+          const clean = w.replace(/[.,!?]/g, "").toLowerCase()
+          const dead = deadWordsLower.includes(clean)
+          return (
+            <span key={i}>
+              {dead ? (
+                <span
+                  style={{
+                    background: "var(--color-hot-tint)",
+                    color: "var(--color-hot)",
+                    padding: "1px 4px",
+                    textDecoration: "line-through",
+                    textDecorationColor: "rgba(255,74,28,0.6)",
+                  }}
+                >
+                  {w}
+                </span>
+              ) : (
+                w
+              )}{" "}
+            </span>
+          )
+        })}
+      </div>
+      {analysis.caption.deadWords.length > 0 && (
+        <div
           style={{
-            fontFamily: "var(--font-italic)",
-            fontStyle: "italic",
-            fontWeight: 400,
-            fontSize: "clamp(20px, 2.2vw, 28px)",
-            lineHeight: 1.25,
-            color: "var(--color-text)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-hot)",
+            letterSpacing: "0.18em",
+            marginTop: 12,
           }}
         >
-          &ldquo;{analysis.verdict}&rdquo;
-        </p>
-      </motion.section>
-
-      {/* Breakdown bars */}
-      <motion.section
-        {...fadeUp}
-        className="py-6 border-t border-b grid grid-cols-2 md:grid-cols-4 gap-6"
-        style={{ borderColor: "var(--color-line)" }}
-      >
-        <Bar label="HOOK" value={analysis.breakdown.hook} />
-        <Bar label="PACING" value={analysis.breakdown.pacing} />
-        <Bar label="THUMBNAIL" value={analysis.breakdown.thumbnail} />
-        <Bar label="CAPTION" value={analysis.breakdown.caption} />
-      </motion.section>
-
-      {/* HOOK */}
-      <motion.section {...fadeUp} className="pt-10">
-        <Label>
-          HOOK · LANDS AT{" "}
-          <TimestampChip
-            seconds={analysis.hook.landsAt}
-            citation="hook"
-          />
-        </Label>
-        <Heading>{analysis.hook.issue}</Heading>
-        <FixLine>{analysis.hook.fix}</FixLine>
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {analysis.hook.alternatives.map((alt, i) => (
-            <Alternative key={i} {...alt} />
-          ))}
+          {analysis.caption.deadWords.length} DEAD WORD ·{" "}
+          {analysis.caption.deadWords.join(" · ").toUpperCase()}
         </div>
-      </motion.section>
+      )}
+      <div className="mt-8">
+        <MonoTag>3 REWRITES</MonoTag>
+        <RewritesGrid
+          rewrites={analysis.caption.rewrites.map((r) => ({
+            tone: r.tone,
+            text: r.text,
+            predictedLift: r.predictedLift,
+          }))}
+          pickIdx={pick}
+        />
+      </div>
+    </FixSectionShell>
+  )
+}
 
-      {/* PACING */}
-      <motion.section {...fadeUp} className="pt-10">
-        <Label>PACING</Label>
-        <Heading>{analysis.pacing.note}</Heading>
-        {analysis.pacing.cuts.map((c, i) => (
-          <TimedItem
-            key={`cut-${i}`}
-            time={
-              <TimestampChip
-                seconds={c.at}
-                citation={`cut-${i}`}
-              />
-            }
-            kind="cut"
-          >
-            <strong style={{ color: "var(--color-text)" }}>{c.issue}</strong>{" "}
-            <span style={{ color: "var(--color-text-dim)" }}>{c.fix}</span>
-          </TimedItem>
-        ))}
-        {analysis.pacing.deadAir.map((d, i) => (
-          <TimedItem
-            key={`da-${i}`}
-            time={
-              <TimestampChip
-                seconds={d.start}
-                citation={`deadair-${i}`}
-                label={`${d.start.toFixed(1)}–${d.end.toFixed(1)}s`}
-              />
-            }
-            kind="deadair"
-          >
-            {d.why}
-          </TimedItem>
-        ))}
-      </motion.section>
+/* ─────────────────────────────────────────────────────────────
+   APPLY CTA — huge lime block
+   ───────────────────────────────────────────────────────────── */
 
-      {/* THUMBNAIL */}
-      <motion.section {...fadeUp} className="pt-10">
-        <Label>
-          THUMBNAIL · BEST FRAME AT{" "}
-          <TimestampChip
-            seconds={analysis.thumbnail.bestFrameAt}
-            citation="thumbnail"
-          />
-        </Label>
-        <Heading>{analysis.thumbnail.issue}</Heading>
-        <FixLine>{analysis.thumbnail.fix}</FixLine>
-      </motion.section>
-
-      {/* CAPTION */}
-      <motion.section {...fadeUp} className="pt-10">
-        <Label>CAPTION</Label>
-        <p
-          className="mt-3 text-base"
-          style={{ color: "var(--color-text-dim)" }}
+function ApplyCTA({ analysis }: { analysis: Analysis }) {
+  return (
+    <section className="px-6 md:px-14 py-8 md:py-12">
+      <div
+        className="relative overflow-hidden px-6 py-7 md:px-12 md:py-10 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 md:gap-12 items-center"
+        style={{
+          background: "var(--color-signal)",
+          color: "var(--color-ink)",
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            right: -40,
+            top: -60,
+            fontFamily: "var(--font-display)",
+            fontWeight: 700,
+            fontSize: 480,
+            lineHeight: 1,
+            color: "rgba(14,13,11,0.08)",
+            letterSpacing: "-0.06em",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+          }}
         >
-          <span
+          {analysis.comparison.ceilingScore}
+        </div>
+        <div className="relative">
+          <div
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 11,
-              color: "var(--color-text-mute)",
-              letterSpacing: "0.1em",
+              letterSpacing: "0.18em",
+              marginBottom: 8,
+              color: "rgba(14,13,11,0.7)",
             }}
           >
-            ORIGINAL ·{" "}
-          </span>
-          <span
+            APPLY ALL 4 FIXES →
+          </div>
+          <div
             style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: "clamp(40px, 7vw, 72px)",
+              lineHeight: 0.9,
+              letterSpacing: "-0.03em",
             }}
           >
-            {analysis.caption.original}
-          </span>
-        </p>
-        {analysis.caption.deadWords.length > 0 && (
-          <p
-            className="mt-2 font-mono text-[11px]"
+            {analysis.score} →{" "}
+            <em
+              style={{
+                fontFamily: "var(--font-italic)",
+                fontStyle: "italic",
+                fontWeight: 500,
+              }}
+            >
+              {analysis.comparison.ceilingScore}
+            </em>
+          </div>
+          <div
             style={{
-              fontFamily: "var(--font-mono)",
-              color: "var(--color-text-mute)",
-              letterSpacing: "0.05em",
+              fontFamily: "var(--font-sans)",
+              fontSize: "clamp(13px, 1.5vw, 16px)",
+              marginTop: 10,
+              opacity: 0.75,
+              maxWidth: 560,
             }}
           >
-            DEAD WORDS ·{" "}
-            {analysis.caption.deadWords.map((w, i) => (
-              <span key={i} style={{ color: "var(--color-hot)" }}>
-                {w}
-                {i < analysis.caption.deadWords.length - 1 ? ", " : ""}
-              </span>
-            ))}
-          </p>
-        )}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {analysis.caption.rewrites.map((r, i) => (
-            <Alternative key={i} {...r} />
-          ))}
+            That&apos;s a tier-1 video. Re-record with this checklist and re-score.
+          </div>
         </div>
-      </motion.section>
-
-      {/* TRENDING */}
-      <motion.section {...fadeUp} className="pt-10">
-        <Label>TRENDING RECOMMENDATIONS</Label>
-        <p
-          className="mt-2 font-mono text-[10px]"
+        <button
+          onClick={() =>
+            toast("Re-record checklist coming soon.", {
+              description: "Day 9+1 ships the editable checklist + re-upload flow.",
+            })
+          }
+          className="relative w-full md:w-auto"
           style={{
             fontFamily: "var(--font-mono)",
-            color: "var(--color-text-mute)",
-            letterSpacing: "0.1em",
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: "0.12em",
+            background: "var(--color-ink)",
+            color: "var(--color-signal)",
+            border: "none",
+            padding: "18px 28px",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
           }}
         >
-          NOTE · model-suggested mood/genre, not a live trend feed (see README)
-        </p>
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <SubLabel>AUDIO</SubLabel>
+          RE-RECORD CHECKLIST ↗
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRENDING — audio + hashtags
+   ───────────────────────────────────────────────────────────── */
+
+function Trending({ analysis }: { analysis: Analysis }) {
+  const matches = deriveAudioMatches(analysis.trending.audio.length)
+
+  return (
+    <section
+      className="relative overflow-hidden border-t px-6 md:px-14 py-10 md:py-14"
+      style={{ borderColor: "var(--color-line)" }}
+    >
+      <Watermark size={400} opacity={0.025} right={20} top={20}>
+        05
+      </Watermark>
+
+      <div className="relative mb-8">
+        <MonoTag>TRENDING RECOMMENDATIONS</MonoTag>
+        <h2
+          className="m-0 mt-2"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 600,
+            fontSize: "clamp(28px, 4vw, 42px)",
+            letterSpacing: "-0.02em",
+            lineHeight: 1.05,
+          }}
+        >
+          What to{" "}
+          <em
+            style={{
+              fontStyle: "italic",
+              color: "var(--color-signal)",
+              fontFamily: "var(--font-italic)",
+            }}
+          >
+            pair this with
+          </em>
+          .
+        </h2>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-text-mute)",
+            letterSpacing: "0.15em",
+            marginTop: 4,
+          }}
+        >
+          NOTE · MODEL-SUGGESTED MOOD/GENRE, NOT A LIVE TREND FEED
+        </div>
+      </div>
+
+      <div className="relative grid grid-cols-1 md:grid-cols-[1.2fr_1fr] gap-6">
+        {/* Audio */}
+        <div>
+          <MonoTag>AUDIO</MonoTag>
+          <div className="flex flex-col gap-2.5 mt-3">
             {analysis.trending.audio.map((a, i) => (
-              <TimedItem key={i} time={a.name} kind="cool">
-                {a.why}
-              </TimedItem>
-            ))}
-          </div>
-          <div>
-            <SubLabel>HASHTAGS</SubLabel>
-            {analysis.trending.hashtags.map((h, i) => (
-              <TimedItem key={i} time={h.tag} kind="cool">
-                {h.why}
-              </TimedItem>
+              <div
+                key={i}
+                className="p-5"
+                style={{
+                  background: "var(--color-ink-2)",
+                  border: `1px solid ${i === 0 ? "var(--color-signal)" : "var(--color-line)"}`,
+                }}
+              >
+                <div className="flex justify-between items-start gap-6">
+                  <div className="flex-1">
+                    <div
+                      style={{
+                        fontFamily: "var(--font-italic)",
+                        fontStyle: "italic",
+                        fontSize: 18,
+                        lineHeight: 1.35,
+                        color: "var(--color-text)",
+                      }}
+                    >
+                      &ldquo;{a.name}&rdquo;
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        color: "var(--color-text-dim)",
+                        marginTop: 8,
+                        maxWidth: 520,
+                      }}
+                    >
+                      {a.why}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0" style={{ minWidth: 70 }}>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-display)",
+                        fontWeight: 600,
+                        fontSize: 22,
+                        color:
+                          i === 0
+                            ? "var(--color-signal)"
+                            : "var(--color-text)",
+                        letterSpacing: "-0.02em",
+                        lineHeight: 0.9,
+                      }}
+                    >
+                      {matches[i]}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 9,
+                        color: "var(--color-text-mute)",
+                        letterSpacing: "0.15em",
+                        marginTop: 4,
+                      }}
+                    >
+                      MATCH
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
-      </motion.section>
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: dur.element, ease, delay: 1.2 }}
-        className="mt-16 pt-6 border-t font-mono text-[10px]"
-        style={{
-          borderColor: "var(--color-line)",
-          fontFamily: "var(--font-mono)",
-          color: "var(--color-text-mute)",
-          letterSpacing: "0.15em",
-        }}
+        {/* Hashtags */}
+        <div>
+          <MonoTag>HASHTAGS · USE TOP 4</MonoTag>
+          <div className="flex flex-col gap-2 mt-3">
+            {analysis.trending.hashtags.map((h, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-1 md:grid-cols-[160px_1fr] gap-3 px-4 py-3 items-baseline"
+                style={{
+                  background:
+                    i < 4 ? "var(--color-signal-tint)" : "transparent",
+                  border: `1px solid ${i < 4 ? "var(--color-signal)" : "var(--color-line)"}`,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 14,
+                    color:
+                      i < 4 ? "var(--color-signal)" : "var(--color-text-dim)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {h.tag}
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-dim)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {h.why}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              const tagStack = analysis.trending.hashtags
+                .slice(0, 4)
+                .map((h) => h.tag)
+                .join(" ")
+              navigator.clipboard
+                ?.writeText(tagStack)
+                .then(() =>
+                  toast.success("Tag stack copied", { description: tagStack }),
+                )
+                .catch(() =>
+                  toast.error("Copy failed — select the tags manually"),
+                )
+            }}
+            style={{
+              ...btnStyle("ghost", "default"),
+              marginTop: 12,
+              width: "100%",
+              textAlign: "center" as const,
+              padding: "14px 0",
+              fontSize: 11,
+            }}
+          >
+            ↗ COPY TAG STACK
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Shared atoms used across the fix sections
+   ───────────────────────────────────────────────────────────── */
+
+function FixSectionShell({
+  number,
+  cat,
+  timeLabel,
+  timeColor,
+  diagnosis,
+  rightCol,
+  children,
+}: {
+  number: string
+  cat: string
+  timeLabel?: string
+  timeColor?: string
+  diagnosis: string | null
+  rightCol?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const isHot = cat === "HOOK"
+  const hasRight = !!rightCol
+
+  return (
+    <section
+      className="relative overflow-hidden border-b px-6 md:px-14 py-12 md:py-18"
+      style={{ borderColor: "var(--color-line)" }}
+    >
+      <Watermark size={620} opacity={0.045} right={-80} top={-100}>
+        {number}
+      </Watermark>
+
+      <div
+        className={`relative grid grid-cols-1 ${hasRight ? "md:grid-cols-[140px_1fr_minmax(200px,_320px)]" : "md:grid-cols-[140px_1fr]"} gap-6 md:gap-12 items-start`}
       >
-        Analysis complete · scored by gemini-flash-latest · click any timestamp to jump the video to that moment
-      </motion.div>
-    </motion.div>
+        {/* Left rail — number + category pill */}
+        <div className="md:border-r md:pr-8" style={{ borderColor: "var(--color-line)" }}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color: "var(--color-text-mute)",
+              letterSpacing: "0.18em",
+              marginBottom: 8,
+            }}
+          >
+            FIX · {number}
+          </div>
+          <Pill color={isHot ? "var(--color-hot)" : "var(--color-signal)"}>
+            {cat}
+          </Pill>
+          {timeLabel && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: timeColor ?? "var(--color-signal)",
+                letterSpacing: "0.12em",
+                marginTop: 14,
+              }}
+            >
+              {timeLabel}
+            </div>
+          )}
+        </div>
+
+        {/* Middle — diagnosis + provided children */}
+        <div className="max-w-[760px]">
+          {diagnosis && (
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 600,
+                fontSize: "clamp(24px, 3.4vw, 44px)",
+                lineHeight: 1.1,
+                letterSpacing: "-0.02em",
+                margin: 0,
+                color: "var(--color-text)",
+              }}
+            >
+              {diagnosis}
+            </h2>
+          )}
+          {children}
+        </div>
+
+        {/* Right column — top lift block or thumbnail comparison */}
+        {rightCol && <div>{rightCol}</div>}
+      </div>
+    </section>
   )
 }
 
-/* ── Small atoms ──────────────────────────────────────────── */
-
-function Label({ children }: { children: ReactNode }) {
+function FixBlock({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="font-mono text-[11px] flex items-center gap-1.5"
+      className="relative mt-6 md:mt-8 p-5 md:p-6"
       style={{
-        fontFamily: "var(--font-mono)",
-        color: "var(--color-text-mute)",
-        letterSpacing: "0.2em",
-        textTransform: "uppercase",
+        background: "var(--color-ink-2)",
+        border: "1px solid var(--color-signal)",
       }}
     >
-      {children}
-    </div>
-  )
-}
-
-function SubLabel({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="font-mono text-[10px] mb-3"
-      style={{
-        fontFamily: "var(--font-mono)",
-        color: "var(--color-text-mute)",
-        letterSpacing: "0.15em",
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function Heading({ children }: { children: ReactNode }) {
-  return (
-    <h2
-      className="mt-3 max-w-[820px]"
-      style={{
-        fontFamily: "var(--font-display)",
-        fontSize: "clamp(22px, 2.6vw, 32px)",
-        lineHeight: 1.18,
-        letterSpacing: "-0.015em",
-        color: "var(--color-text)",
-        fontWeight: 500,
-      }}
-    >
-      {children}
-    </h2>
-  )
-}
-
-function FixLine({ children }: { children: ReactNode }) {
-  return (
-    <p
-      className="mt-3 max-w-[820px] text-[15px] leading-relaxed"
-      style={{ color: "var(--color-text-dim)" }}
-    >
-      <span
+      <div
+        className="absolute"
         style={{
+          top: -1,
+          left: -1,
+          background: "var(--color-signal)",
+          color: "var(--color-ink)",
           fontFamily: "var(--font-mono)",
           fontSize: 10,
-          color: "var(--color-signal)",
           letterSpacing: "0.15em",
-          marginRight: 8,
+          padding: "4px 10px",
+          fontWeight: 600,
         }}
       >
         FIX
-      </span>
-      {children}
-    </p>
-  )
-}
-
-function Bar({ label, value }: { label: string; value: number }) {
-  const color =
-    value < 40
-      ? "var(--color-hot)"
-      : value < 60
-        ? "var(--color-gold)"
-        : "var(--color-signal)"
-  return (
-    <div>
+      </div>
       <div
-        className="flex justify-between font-mono text-[10px] mb-2"
         style={{
-          fontFamily: "var(--font-mono)",
-          color: "var(--color-text-mute)",
-          letterSpacing: "0.1em",
+          fontFamily: "var(--font-sans)",
+          fontSize: "clamp(14px, 1.7vw, 18px)",
+          lineHeight: 1.5,
+          color: "var(--color-text)",
+          paddingTop: 8,
         }}
       >
-        <span>{label}</span>
-        <span style={{ color }}>{value}</span>
-      </div>
-      <div
-        className="h-1 relative"
-        style={{ background: "rgba(255,255,255,0.06)" }}
-      >
-        <div
-          className="absolute left-0 top-0 bottom-0"
-          style={{ width: `${value}%`, background: color }}
-        />
+        {children}
       </div>
     </div>
   )
 }
 
-function Alternative({
-  tone,
-  text,
-  predictedLift,
+function RewritesGrid({
+  rewrites,
+  pickIdx,
 }: {
-  tone: string
-  text: string
-  predictedLift: number
+  rewrites: Array<{ tone: string; text: string; predictedLift: number }>
+  pickIdx: number
 }) {
-  const isHero = predictedLift >= 25
   return (
-    <div
-      className="border p-4 transition-[border-color,background] duration-[220ms]"
-      style={{
-        background: isHero ? "rgba(198,255,61,0.05)" : "transparent",
-        borderColor: isHero
-          ? "var(--color-signal)"
-          : "var(--color-line)",
-      }}
-    >
-      <div
-        className="flex justify-between font-mono text-[10px]"
-        style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.1em" }}
-      >
-        <span
-          style={{
-            color: isHero ? "var(--color-signal)" : "var(--color-gold)",
-          }}
-        >
-          +{predictedLift}% LIFT
-        </span>
-        <span style={{ color: "var(--color-text-mute)" }}>{tone}</span>
+    <div className="mt-6">
+      <MonoTag>3 REWRITES · ORDERED BY PREDICTED LIFT</MonoTag>
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2.5">
+        {rewrites.map((r, i) => {
+          const picked = i === pickIdx
+          return (
+            <div
+              key={i}
+              className="relative p-4 md:p-5"
+              style={{
+                background: picked ? "var(--color-signal-tint)" : "transparent",
+                border: `1px solid ${picked ? "var(--color-signal)" : "var(--color-line)"}`,
+              }}
+            >
+              {picked && (
+                <div
+                  className="absolute"
+                  style={{
+                    top: -1,
+                    right: -1,
+                    background: "var(--color-signal)",
+                    color: "var(--color-ink)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 9,
+                    letterSpacing: "0.15em",
+                    padding: "3px 7px",
+                    fontWeight: 600,
+                  }}
+                >
+                  PICK
+                </div>
+              )}
+              <div className="flex justify-between items-baseline">
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color: picked ? "var(--color-signal)" : "var(--color-text-dim)",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  {r.tone.toUpperCase()}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 600,
+                    fontSize: 20,
+                    color: "var(--color-signal)",
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  +{r.predictedLift}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--font-italic)",
+                  fontStyle: "italic",
+                  fontSize: 15,
+                  lineHeight: 1.4,
+                  color: picked ? "var(--color-text)" : "var(--color-text-dim)",
+                  marginTop: 10,
+                }}
+              >
+                &ldquo;{r.text}&rdquo;
+              </div>
+            </div>
+          )
+        })}
       </div>
-      <p
-        className="mt-3 text-[14px] leading-snug"
-        style={{ color: "var(--color-text)" }}
-      >
-        {text}
-      </p>
     </div>
   )
 }
 
-function TimedItem({
-  time,
-  kind,
-  children,
-}: {
-  time: ReactNode
-  kind: "cut" | "deadair" | "cool"
-  children: ReactNode
-}) {
-  const color =
-    kind === "cut"
-      ? "var(--color-gold)"
-      : kind === "deadair"
-        ? "var(--color-hot)"
-        : "var(--color-cool)"
+function TopLiftBlock({ value, label }: { value: string; label: string }) {
   return (
-    <div
-      className="mt-4 pl-4 max-w-[820px]"
-      style={{ borderLeft: `2px solid ${color}` }}
-    >
+    <div className="text-center md:text-right">
       <div
-        className="mb-1.5"
         style={{
           fontFamily: "var(--font-mono)",
           fontSize: 10,
-          color,
-          letterSpacing: "0.1em",
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.2em",
+          marginBottom: 4,
         }}
       >
-        {time}
+        TOP LIFT
       </div>
       <div
-        className="text-[14px] leading-relaxed"
-        style={{ color: "var(--color-text-dim)" }}
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 600,
+          fontSize: "clamp(72px, 10vw, 120px)",
+          lineHeight: 0.85,
+          color: "var(--color-signal)",
+          letterSpacing: "-0.04em",
+        }}
       >
+        {value}
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.2em",
+          marginTop: 4,
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function ThumbBox({
+  label,
+  sub,
+  hot,
+  good,
+  children,
+}: {
+  label: string
+  sub: string
+  hot?: boolean
+  good?: boolean
+  children: React.ReactNode
+}) {
+  const color = hot ? "var(--color-hot)" : "var(--color-signal)"
+  return (
+    <div>
+      <MonoTag color={color}>{label}</MonoTag>
+      <div
+        className="mt-2 flex items-center justify-center p-3 text-center relative"
+        style={{
+          aspectRatio: "9 / 16",
+          background: hot
+            ? "#000"
+            : "linear-gradient(180deg,#4a3a1a,#291f0f)",
+          border: `1px solid ${color}`,
+        }}
+      >
+        {good && (
+          <div
+            aria-hidden
+            className="absolute"
+            style={{
+              inset: "30% 18%",
+              background: "rgba(232,177,74,0.4)",
+              border: "1px solid rgba(232,177,74,0.7)",
+            }}
+          />
+        )}
         {children}
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 9,
+          color,
+          letterSpacing: "0.15em",
+          marginTop: 6,
+        }}
+      >
+        {sub}
       </div>
     </div>
   )
