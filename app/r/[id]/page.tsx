@@ -7,6 +7,7 @@ import { ReportView } from "@/components/report/ReportView"
 import { PendingClient } from "@/components/report/PendingClient"
 import { ShareControls } from "@/components/report/ShareControls"
 import { HistorySync } from "@/components/report/HistorySync"
+import { RetryButton } from "@/components/report/RetryButton"
 import { ReportProvider } from "@/contexts/report-context"
 import { Analysis } from "@/lib/ai/schema"
 
@@ -189,7 +190,10 @@ export default async function ReportPage({
         {data.status === "ready" && initialAnalysis ? (
           <ReportView videoUrl={videoUrl} />
         ) : data.status === "failed" ? (
-          <FailedState message={data.error_message ?? "Unknown error"} />
+          <FailedState
+            id={data.id}
+            message={data.error_message ?? "Unknown error"}
+          />
         ) : (
           <PendingClient id={data.id} videoUrl={videoUrl} />
         )}
@@ -200,7 +204,7 @@ export default async function ReportPage({
   )
 }
 
-function FailedState({ message }: { message: string }) {
+function FailedState({ id, message }: { id: string; message: string }) {
   return (
     <div className="max-w-[1280px] mx-auto px-6 md:px-14 pt-12 pb-24">
       <div
@@ -234,6 +238,21 @@ function FailedState({ message }: { message: string }) {
       >
         {message}
       </p>
+      <p
+        className="mt-4 max-w-[640px]"
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: 13,
+          color: "var(--color-text-mute)",
+          lineHeight: 1.6,
+        }}
+      >
+        Often a transient one-off — Gemini overshooting a constraint, a
+        timeout, a network hiccup. Click below to re-run the analysis on
+        the same file. The video stays in Storage; only the analysis is
+        re-attempted.
+      </p>
+      <RetryButton id={id} />
     </div>
   )
 }
