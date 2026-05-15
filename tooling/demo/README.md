@@ -32,40 +32,56 @@ python -m playwright install chromium
 
 ## Run
 
-Two modes — pick the one that matches your workflow.
+Three modes — pick the one that matches your workflow.
 
-### Mode 1 — Full auto (recording + narration + captions)
+### Mode 1 — Full auto (recording + narration + captions, hands-off)
 
 ```powershell
 python make_demo.py
 ```
 
 A Chromium window will open and drive itself through the demo. **Don't
-touch it** — clicks and scrolls are scripted and need to land on a
-predictable page state. The whole run takes ~90 seconds.
+touch it** — clicks and scrolls are scripted. The whole run takes ~90 sec.
 
 Outputs `final.mp4` + `captions.srt`.
 
-### Mode 2 — Audio-only (you record the screen yourself in Loom)
+### Mode 2 — Record-then-mux (recommended for Loom)
+
+You record a silent screen capture in Loom, download the raw MP4, and the
+muxer bakes the AI narration + burned-in captions onto it. **No audio sync
+during recording — you just click through the demo silently.**
+
+```powershell
+# Step 1: generate narration + captions (15 sec)
+python make_demo.py --audio-only
+
+# Step 2: record your screen in Loom (1:40 target, no mic, no system audio)
+# Download the raw MP4 from Loom.
+
+# Step 3: mux narration + burned-in captions onto your recording
+python mux_recording.py path/to/your-loom-export.mp4
+```
+
+Outputs `output/final.mp4` with the narration as the audio track and
+captions burned into the video at the bottom. Re-upload to Loom as a
+fresh upload.
+
+Flags for `mux_recording.py`:
+- `--no-burn` — don't burn captions into the video; embed them as a soft
+  subtitle track instead. Upload `captions.srt` to Loom separately.
+- `--regenerate` — force-regenerate narration before muxing.
+- `--output PATH` — write to a custom output location.
+
+### Mode 3 — Audio-only, play it during a live recording
 
 ```powershell
 python make_demo.py --audio-only
 ```
 
-Skips the browser automation. Just produces `narration.mp3` +
-`captions.srt`. Takes ~15 seconds. Use this when you'd rather record
-your own Loom screen capture while the AI voice plays:
-
-1. Open Loom desktop, start a **Screen-only** recording with **system
-   audio capture ON** (Loom's settings → Audio → "Computer audio").
-2. Press play on `narration.mp3` **and** start recording at the same
-   instant — this is what makes the SRT line up.
-3. Click through `https://metric-fyi.vercel.app` while the AI voice
-   narrates (the audio is timed at ~1:40 with natural pauses).
-4. Stop recording. Loom uploads automatically.
-5. In Loom's editor, click **Captions → Upload captions** and pick
-   `captions.srt`. It'll be perfectly synced because both the audio
-   and the SRT start at 0:00.
+Skips browser automation. Produces just `narration.mp3` + `captions.srt`.
+Use this when you'd rather play the audio file in your speakers while you
+record the screen live in Loom with system-audio capture on. SRT timing
+will line up because both the audio and the SRT start at 0:00.
 
 When it finishes, look in `tooling/demo/output/`. Upload `final.mp4` to
 Loom via [loom.com/library](https://www.loom.com/library) → Upload (top
