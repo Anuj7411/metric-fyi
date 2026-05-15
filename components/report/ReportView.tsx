@@ -533,7 +533,6 @@ function FixThumbnail({
 function FixCaption({ analysis }: { analysis: Analysis }) {
   const { applied } = useReport()
   const pick = pickIndex(analysis.caption.rewrites)
-  const picked = analysis.caption.rewrites[pick]
   const deadWordsLower = analysis.caption.deadWords.map((w) => w.toLowerCase())
   const isApplied = applied.caption
 
@@ -544,136 +543,78 @@ function FixCaption({ analysis }: { analysis: Analysis }) {
       appliedKey="caption"
       diagnosis={null}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        {isApplied ? (
-          <motion.div
-            key="applied"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: dur.element, ease: easeCurve }}
-          >
-            <MonoTag color="var(--color-signal)">YOUR NEW CAPTION</MonoTag>
-            <div
-              className="mt-3 max-w-[920px]"
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "clamp(20px, 2.4vw, 28px)",
-                lineHeight: 1.4,
-                color: "var(--color-text)",
-                letterSpacing: "-0.005em",
-              }}
-            >
-              &ldquo;{picked.text}&rdquo;
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-signal)",
-                letterSpacing: "0.15em",
-                marginTop: 14,
-              }}
-            >
-              +{picked.predictedLift}% PREDICTED LIFT ·{" "}
-              {picked.tone.toUpperCase()}
-            </div>
-            <p
-              className="mt-6 max-w-[640px]"
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-mute)",
-                letterSpacing: "0.05em",
-                lineHeight: 1.6,
-              }}
-            >
-              ↳ Original below for reference
-            </p>
-            <div
-              className="mt-2 max-w-[820px] opacity-50"
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 15,
-                lineHeight: 1.5,
-                color: "var(--color-text-dim)",
-                textDecoration: "line-through",
-                textDecorationColor: "rgba(168,160,146,0.5)",
-              }}
-            >
-              {analysis.caption.original}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="original"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: dur.element, ease: easeCurve }}
-          >
-            <MonoTag>ORIGINAL CAPTION</MonoTag>
-            <div
-              className="mt-3 max-w-[920px]"
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "clamp(16px, 2vw, 24px)",
-                lineHeight: 1.45,
-                color: "var(--color-text)",
-              }}
-            >
-              {analysis.caption.original.split(" ").map((w, i) => {
-                const clean = w.replace(/[.,!?]/g, "").toLowerCase()
-                const dead = deadWordsLower.includes(clean)
-                return (
-                  <span key={i}>
-                    {dead ? (
-                      <span
-                        style={{
-                          background: "var(--color-hot-tint)",
-                          color: "var(--color-hot)",
-                          padding: "1px 4px",
-                          textDecoration: "line-through",
-                          textDecorationColor: "rgba(255,74,28,0.6)",
-                        }}
-                      >
-                        {w}
-                      </span>
-                    ) : (
-                      w
-                    )}{" "}
-                  </span>
-                )
-              })}
-            </div>
-            {analysis.caption.deadWords.length > 0 && (
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-hot)",
-                  letterSpacing: "0.18em",
-                  marginTop: 12,
-                }}
-              >
-                {analysis.caption.deadWords.length} DEAD WORD ·{" "}
-                {analysis.caption.deadWords.join(" · ").toUpperCase()}
-              </div>
-            )}
-            <div className="mt-8">
-              <MonoTag>3 REWRITES</MonoTag>
-              <RewritesGrid
-                rewrites={analysis.caption.rewrites.map((r) => ({
-                  tone: r.tone,
-                  text: r.text,
-                  predictedLift: r.predictedLift,
-                }))}
-                pickIdx={pick}
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Layout stays stable across the applied toggle — what changes is
+          subtle: original caption fades to 45% opacity, headers swap labels.
+          The RewritesGrid already highlights the picked card via the "PICK"
+          badge it owns. No AnimatePresence content swap (which used to
+          cause a ~120px page jolt every time the user clicked the Caption
+          toggle, because the "applied" view had a strikethrough footer
+          that the "original" view didn't). */}
+      <MonoTag color={isApplied ? "var(--color-signal)" : undefined}>
+        {isApplied ? "ORIGINAL · BEING REPLACED" : "ORIGINAL CAPTION"}
+      </MonoTag>
+      <div
+        className="mt-3 max-w-[920px]"
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: "clamp(16px, 2vw, 24px)",
+          opacity: isApplied ? 0.45 : 1,
+          transition: "opacity 320ms cubic-bezier(.2,.8,.2,1)",
+          lineHeight: 1.45,
+          color: "var(--color-text)",
+        }}
+      >
+        {analysis.caption.original.split(" ").map((w, i) => {
+          const clean = w.replace(/[.,!?]/g, "").toLowerCase()
+          const dead = deadWordsLower.includes(clean)
+          return (
+            <span key={i}>
+              {dead ? (
+                <span
+                  style={{
+                    background: "var(--color-hot-tint)",
+                    color: "var(--color-hot)",
+                    padding: "1px 4px",
+                    textDecoration: "line-through",
+                    textDecorationColor: "rgba(255,74,28,0.6)",
+                  }}
+                >
+                  {w}
+                </span>
+              ) : (
+                w
+              )}{" "}
+            </span>
+          )
+        })}
+      </div>
+      {analysis.caption.deadWords.length > 0 && (
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-hot)",
+            letterSpacing: "0.18em",
+            marginTop: 12,
+          }}
+        >
+          {analysis.caption.deadWords.length} DEAD WORD ·{" "}
+          {analysis.caption.deadWords.join(" · ").toUpperCase()}
+        </div>
+      )}
+      <div className="mt-8">
+        <MonoTag color={isApplied ? "var(--color-signal)" : undefined}>
+          {isApplied ? "PICKED REWRITE — NOW YOUR CAPTION" : "3 REWRITES"}
+        </MonoTag>
+        <RewritesGrid
+          rewrites={analysis.caption.rewrites.map((r) => ({
+            tone: r.tone,
+            text: r.text,
+            predictedLift: r.predictedLift,
+          }))}
+          pickIdx={pick}
+        />
+      </div>
     </FixSectionShell>
   )
 }

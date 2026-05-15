@@ -170,26 +170,37 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
               cursor: "pointer",
             }}
           />
-          {/* Play overlay */}
+          {/* Play overlay — SVG triangle for consistent rendering across iOS
+              Safari / Chrome / Firefox. Optical centering done via SVG
+              viewBox, not via padding hacks on a unicode glyph. */}
           {!isPlaying && (
             <button
               onClick={togglePlay}
               aria-label="Play"
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+              className="absolute top-1/2 left-1/2 flex items-center justify-center"
               style={{
-                width: 64,
-                height: 64,
+                width: 68,
+                height: 68,
+                marginLeft: -34,
+                marginTop: -34,
                 borderRadius: "50%",
                 background: "rgba(198,255,61,0.95)",
                 color: "var(--color-ink)",
                 border: "none",
                 cursor: "pointer",
-                fontSize: 24,
-                fontWeight: 700,
-                paddingLeft: 6,
+                boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
               }}
             >
-              ▶
+              <svg
+                width="22"
+                height="26"
+                viewBox="0 0 22 26"
+                fill="currentColor"
+                aria-hidden
+                style={{ marginLeft: 3 }}
+              >
+                <path d="M2 2 L20 13 L2 24 Z" />
+              </svg>
             </button>
           )}
           {/* Bottom control bar */}
@@ -215,7 +226,23 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
                 height: 28,
               }}
             >
-              {isPlaying ? "❚❚" : "▶"}
+              {isPlaying ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+                  <rect x="2" y="1" width="3" height="10" fill="currentColor" />
+                  <rect x="7" y="1" width="3" height="10" fill="currentColor" />
+                </svg>
+              ) : (
+                <svg
+                  width="12"
+                  height="14"
+                  viewBox="0 0 12 14"
+                  fill="currentColor"
+                  aria-hidden
+                  style={{ marginLeft: 2 }}
+                >
+                  <path d="M1 1 L11 7 L1 13 Z" />
+                </svg>
+              )}
             </button>
             <div
               className="text-[11px] tabular-nums"

@@ -50,7 +50,7 @@ export function Navigation() {
   return (
     <>
       <nav
-        className="relative flex justify-between items-center px-6 md:px-12 py-5 border-b"
+        className="relative flex justify-between items-center gap-4 px-6 md:px-14 lg:px-20 py-5 border-b"
         style={{ borderColor: "var(--color-line)" }}
       >
         <Logo />

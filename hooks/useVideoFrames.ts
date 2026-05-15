@@ -11,11 +11,15 @@ import { useEffect, useState } from "react"
  * timestamp in sequence, paints the frame to an offscreen canvas, and
  * returns the JPEG data URLs.
  *
- * Frames come back one at a time as they finish, so the UI can render
- * each thumbnail the moment it's available instead of waiting for all.
+ * iOS Safari quirk: setting currentTime before readyState >= HAVE_FUTURE_DATA
+ * silently no-ops — the `seeked` event never fires. Two robustness tricks:
+ *   - Wait for the `canplay` event (readyState 3) before the first seek
+ *   - Call .play() then immediately .pause() once to prime the buffer
+ *     (some iOS versions need the video element to have been "user
+ *      acknowledged" before seeking works reliably)
  *
- * No ffmpeg, no server work, no Supabase Storage writes — runs entirely
- * in the user's browser after the report page loads.
+ * No ffmpeg, no server work, runs entirely in the user's browser after
+ * the report page loads.
  */
 export function useVideoFrames(
   videoUrl: string,
@@ -23,7 +27,6 @@ export function useVideoFrames(
   options: { maxWidth?: number; quality?: number } = {},
 ): Record<number, string> {
   const [frames, setFrames] = useState<Record<number, string>>({})
-  // Stable key for deps so [1,2,3] === [1,2,3] doesn't re-run forever
   const tsKey = timestamps.join("|")
 
   useEffect(() => {
@@ -34,18 +37,43 @@ export function useVideoFrames(
     video.preload = "auto"
     video.muted = true
     video.playsInline = true
-    // Some browsers require src be set AFTER crossOrigin
+    // iOS hint: keep the video off-screen but in-document so the player
+    // pipeline initialises. Adding to body briefly is safer than detached.
+    video.style.position = "fixed"
+    video.style.top = "-9999px"
+    video.style.left = "-9999px"
+    video.style.width = "1px"
+    video.style.height = "1px"
+    video.style.opacity = "0"
+    video.style.pointerEvents = "none"
+    document.body.appendChild(video)
     video.src = videoUrl
 
     const canvas = document.createElement("canvas")
     const ctx = canvas.getContext("2d")
-    if (!ctx) return
+    if (!ctx) {
+      document.body.removeChild(video)
+      return
+    }
 
     let cancelled = false
     let i = 0
+    let primed = false
+    let seekFallback: ReturnType<typeof setTimeout> | null = null
 
     const maxW = options.maxWidth ?? 160
     const quality = options.quality ?? 0.55
+
+    const cleanup = () => {
+      cancelled = true
+      if (seekFallback) clearTimeout(seekFallback)
+      video.removeEventListener("loadedmetadata", onReady)
+      video.removeEventListener("canplay", onReady)
+      video.removeEventListener("seeked", onSeeked)
+      video.removeEventListener("error", onError)
+      video.src = ""
+      if (video.parentNode) video.parentNode.removeChild(video)
+    }
 
     const captureNext = () => {
       if (cancelled || i >= timestamps.length) {
@@ -54,25 +82,36 @@ export function useVideoFrames(
       }
       // Snap a hair past t=0 to dodge black opening frames in some encodings
       const target = Math.max(0.05, timestamps[i])
-      // Clamp to duration if known
+      const duration = video.duration
       const safe =
-        Number.isFinite(video.duration) && video.duration > 0
-          ? Math.min(target, video.duration - 0.05)
+        Number.isFinite(duration) && duration > 0
+          ? Math.min(target, duration - 0.05)
           : target
+
+      // Fallback: if `seeked` doesn't fire within 1.5s, retry once.
+      if (seekFallback) clearTimeout(seekFallback)
+      seekFallback = setTimeout(() => {
+        if (cancelled) return
+        if (Math.abs(video.currentTime - safe) < 0.5) {
+          // We're approximately at the target; force a capture anyway.
+          onSeeked()
+        }
+      }, 1500)
+
       try {
         video.currentTime = safe
       } catch {
-        // Some browsers throw if currentTime is set before metadata loads.
-        // Defer to the next loadedmetadata pass.
+        // Some browsers throw if seek is too early; defer.
       }
     }
 
     const onSeeked = () => {
       if (cancelled) return
-      if (!video.videoWidth || !video.videoHeight) {
-        // Metadata still loading — try again on the next loadedmetadata
-        return
+      if (seekFallback) {
+        clearTimeout(seekFallback)
+        seekFallback = null
       }
+      if (!video.videoWidth || !video.videoHeight) return
 
       const ratio = video.videoHeight / video.videoWidth
       canvas.width = maxW
@@ -83,8 +122,7 @@ export function useVideoFrames(
         const idx = i
         setFrames((prev) => ({ ...prev, [idx]: dataUrl }))
       } catch {
-        // SecurityError = canvas was tainted = CORS failed somehow.
-        // Bail rather than spin forever; the UI keeps showing placeholders.
+        // SecurityError = CORS taint. Stop trying — UI falls back to gradient.
         cleanup()
         return
       }
@@ -92,27 +130,39 @@ export function useVideoFrames(
       captureNext()
     }
 
-    const onMeta = () => {
-      // Kick off the first capture once we know the duration
-      if (i === 0) captureNext()
+    const onReady = () => {
+      if (cancelled || primed) return
+      primed = true
+      // iOS prime: trigger a brief play() to register the video as
+      // user-controllable, then immediately pause and start seeking.
+      // Wrapped in a promise chain so we handle the autoplay-blocked
+      // rejection gracefully — we just skip the prime and seek directly.
+      const playPromise = video.play()
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            video.pause()
+            captureNext()
+          })
+          .catch(() => {
+            // Autoplay blocked — seek anyway, modern Safari (16+) usually
+            // still seeks correctly even without the prime.
+            captureNext()
+          })
+      } else {
+        captureNext()
+      }
     }
 
-    const onError = () => {
-      cleanup()
-    }
+    const onError = () => cleanup()
 
-    video.addEventListener("loadedmetadata", onMeta)
+    // Wait for canplay (readyState 3), not just loadedmetadata (1), before
+    // any seek — that's what iOS Safari needs.
+    video.addEventListener("canplay", onReady, { once: true })
+    // loadedmetadata is a fallback in case canplay never fires (rare)
+    video.addEventListener("loadedmetadata", onReady, { once: true })
     video.addEventListener("seeked", onSeeked)
     video.addEventListener("error", onError)
-
-    const cleanup = () => {
-      cancelled = true
-      video.removeEventListener("loadedmetadata", onMeta)
-      video.removeEventListener("seeked", onSeeked)
-      video.removeEventListener("error", onError)
-      // Letting GC handle the elements; they're never attached to the DOM.
-      video.src = ""
-    }
 
     return cleanup
     // eslint-disable-next-line react-hooks/exhaustive-deps
