@@ -29,7 +29,9 @@ export default function RootLayout({
     >
       <body className="antialiased flex flex-col min-h-screen">
         <div className="flex-1 flex flex-col">{children}</div>
-        <Toaster position="top-center" />
+        {/* bottom-center stays visible on iOS Safari which obscures
+            top-positioned toasts with its URL bar */}
+        <Toaster position="bottom-center" richColors closeButton />
       </body>
     </html>
   )

@@ -22,6 +22,9 @@ type Props = {
  * anywhere and it lands here.
  *
  * Native HTML5 drag-and-drop. No external library.
+ *
+ * Mobile layout: input row + button stack vertically (flex-col), button
+ * goes full-width. Desktop: horizontal flex row.
  */
 export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props) {
   const [dragOver, setDragOver] = useState(false)
@@ -80,39 +83,73 @@ export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props
 
   return (
     <div
-      className="flex items-stretch border transition-[border-color] duration-[220ms] ease-[cubic-bezier(.2,.8,.2,1)]"
+      className="relative flex flex-col md:flex-row md:items-stretch border transition-[border-color] duration-[220ms] ease-[cubic-bezier(.2,.8,.2,1)] overflow-hidden"
       style={{
         background: "var(--color-ink-2)",
-        borderColor: dragOver ? "var(--color-signal)" : "var(--color-line)",
+        borderColor: dragOver
+          ? "var(--color-signal)"
+          : busy
+            ? "var(--color-signal)"
+            : "var(--color-line)",
       }}
       onClick={() => !canScore && fileInputRef.current?.click()}
     >
-      <span
-        aria-hidden
-        className="self-center pl-6 pr-4 font-mono text-base"
-        style={{
-          fontFamily: "var(--font-mono)",
-          color: "var(--color-signal)",
-        }}
-      >
-        $
-      </span>
+      {/* Indeterminate progress bar shown during upload — visible feedback
+          on the input itself, not just a top-of-screen toast that iOS can
+          obscure behind the URL chrome. */}
+      {busy && (
+        <div
+          aria-hidden
+          className="absolute left-0 right-0 top-0 h-0.5 overflow-hidden"
+          style={{ background: "rgba(198,255,61,0.15)" }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              width: "40%",
+              background: "var(--color-signal)",
+              animation: "uploadProgress 1.4s ease-in-out infinite",
+            }}
+          />
+          <style>{`@keyframes uploadProgress {
+            0%   { left: -40%; }
+            100% { left: 100%; }
+          }`}</style>
+        </div>
+      )}
 
-      <div className="flex-1 flex items-center py-6 pr-4 cursor-pointer">
+      <div className="flex items-stretch flex-1 min-w-0">
         <span
-          className="font-mono text-[15px] md:text-[18px] truncate"
+          aria-hidden
+          className="self-center pl-4 md:pl-6 pr-3 md:pr-4 font-mono text-base"
           style={{
             fontFamily: "var(--font-mono)",
-            color: canScore ? "var(--color-text)" : "var(--color-text-mute)",
-            letterSpacing: "-0.005em",
+            color: "var(--color-signal)",
           }}
         >
-          {dragOver
-            ? "drop to upload →"
-            : canScore
-              ? pickedLabel
-              : "drop a video — or click to pick a file"}
+          $
         </span>
+
+        <div className="flex-1 min-w-0 flex items-center py-5 md:py-6 pr-4 cursor-pointer">
+          <span
+            className="font-mono text-[13px] md:text-[18px] truncate w-full"
+            style={{
+              fontFamily: "var(--font-mono)",
+              color: canScore ? "var(--color-text)" : "var(--color-text-mute)",
+              letterSpacing: "-0.005em",
+            }}
+          >
+            {dragOver
+              ? "drop to upload →"
+              : busy
+                ? `uploading ${pickedLabel}…`
+                : canScore
+                  ? pickedLabel
+                  : "drop a video — or click to pick"}
+          </span>
+        </div>
       </div>
 
       <input
@@ -134,7 +171,8 @@ export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props
           e.stopPropagation()
           onScore()
         }}
-        className="!rounded-none !h-auto"
+        className="!rounded-none !h-auto w-full md:w-auto py-4 md:py-0 border-t md:border-t-0 md:border-l"
+        style={{ borderColor: "var(--color-signal)" }}
       >
         {busy ? "Uploading…" : "Score it →"}
       </Button>

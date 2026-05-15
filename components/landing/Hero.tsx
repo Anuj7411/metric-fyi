@@ -113,7 +113,7 @@ export function Hero() {
   }
 
   return (
-    <section className="flex-1 flex flex-col justify-center px-12 md:px-20 relative">
+    <section className="flex-1 flex flex-col justify-center px-6 md:px-14 lg:px-20 py-12 md:py-0 relative overflow-hidden">
       {/* faint background grid */}
       <div
         aria-hidden
@@ -158,9 +158,10 @@ export function Hero() {
           className="font-semibold m-0"
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: "clamp(56px, 9vw, 108px)",
+            fontSize: "clamp(40px, 11vw, 108px)",
             lineHeight: 0.96,
             letterSpacing: "-0.025em",
+            wordSpacing: "-0.04em",
           }}
         >
           Paste a video.
@@ -180,7 +181,7 @@ export function Hero() {
           reason it isn&apos;t going off.
         </motion.h1>
 
-        <motion.div {...fadeUp} className="mt-12 max-w-[1100px]">
+        <motion.div {...fadeUp} className="mt-8 md:mt-12 max-w-[1100px]">
           <UploadCard
             pickedLabel={picked?.label ?? ""}
             onFile={handleFile}

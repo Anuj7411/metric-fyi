@@ -109,7 +109,7 @@ function NavButton({
   return (
     <button
       onClick={onClick}
-      className="cursor-pointer"
+      className="cursor-pointer whitespace-nowrap"
       style={{
         background: "transparent",
         border: "none",
