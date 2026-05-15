@@ -168,17 +168,42 @@ export const CaptionAnalysis = z.object({
     .transform((arr) => arr.slice(0, 3)),
 })
 
+/** Signed integer delta in [-100,+100]. Independent of category. */
+const SignedDelta = z
+  .number()
+  .int()
+  .transform((n) => Math.max(-100, Math.min(100, n)))
+
 export const Comparison = z.object({
-  /** Delta vs. category median. Clamp into the [-100, +100] range. */
-  vsCategoryMedian: z
-    .number()
-    .int()
-    .transform((n) => Math.max(-100, Math.min(100, n))),
+  /** Delta vs. category median (specific vertical, e.g. "GRWM creators"). */
+  vsCategoryMedian: SignedDelta,
+  /** Delta vs. platform median (all short-form). Optional for back-compat
+   *  with older reports written before this field existed. */
+  vsPlatformMedian: SignedDelta.optional(),
   /** What this video could score if every fix were applied. Always
    *  >= the headline score (we don't enforce that — UI tolerates it). */
   ceilingScore: Score100,
   /** Inferred content vertical. */
   inferredCategory: ShortString,
+})
+
+/** Day-of-week token Gemini may emit. Free-form 3-letter uppercase. */
+const DayToken = z
+  .string()
+  .min(1)
+  .transform((s) => s.trim().slice(0, 3).toUpperCase())
+
+/** Time-of-day token. Free-form (e.g. "6PM", "11AM", "8:30PM"). */
+const TimeToken = z
+  .string()
+  .min(1)
+  .transform((s) => s.trim().toUpperCase().replace(/\s+/g, ""))
+
+/** Model-grounded posting-window recommendation. Optional for back-compat. */
+export const OptimalPostTime = z.object({
+  day: DayToken,
+  time: TimeToken,
+  why: ShortString,
 })
 
 /**
@@ -239,6 +264,8 @@ export const Analysis = z.object({
   caption: CaptionAnalysis,
   comparison: Comparison,
   trending: TrendingSuggestions,
+  /** Optional — older reports won't have this; UI falls back to deriver. */
+  optimalPostTime: OptimalPostTime.optional(),
 })
 export type Analysis = z.infer<typeof Analysis>
 
@@ -278,6 +305,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
     "caption",
     "comparison",
     "trending",
+    "optimalPostTime",
   ],
   properties: {
     score: SCORE_SCHEMA,
@@ -365,11 +393,26 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
     },
     comparison: {
       type: "object",
-      required: ["vsCategoryMedian", "ceilingScore", "inferredCategory"],
+      required: [
+        "vsCategoryMedian",
+        "vsPlatformMedian",
+        "ceilingScore",
+        "inferredCategory",
+      ],
       properties: {
         vsCategoryMedian: { type: "integer", minimum: -100, maximum: 100 },
+        vsPlatformMedian: { type: "integer", minimum: -100, maximum: 100 },
         ceilingScore: SCORE_SCHEMA,
         inferredCategory: { type: "string" },
+      },
+    },
+    optimalPostTime: {
+      type: "object",
+      required: ["day", "time", "why"],
+      properties: {
+        day: { type: "string" },
+        time: { type: "string" },
+        why: { type: "string" },
       },
     },
     trending: {

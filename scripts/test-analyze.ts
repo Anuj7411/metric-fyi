@@ -65,7 +65,15 @@ async function runOne(file: string, apiKey: string): Promise<void> {
 
   const a = result.analysis
   console.log(`  OK in ${elapsed}s (${result.tokensUsed} tokens)`)
-  console.log(`    SCORE       ${a.score} | ceiling ${a.comparison.ceilingScore}`)
+  const weighted = Math.round(
+    a.breakdown.hook * 0.35 +
+      a.breakdown.pacing * 0.25 +
+      a.breakdown.caption * 0.25 +
+      a.breakdown.thumbnail * 0.15,
+  )
+  console.log(`    SCORE       ${a.score} (weighted breakdown ${weighted}, drift ${a.score - weighted}) | ceiling ${a.comparison.ceilingScore}`)
+  console.log(`    vs PLATFORM ${a.comparison.vsPlatformMedian ?? "—"}    vs CATEGORY ${a.comparison.vsCategoryMedian}`)
+  console.log(`    postTime    ${a.optimalPostTime?.day ?? "—"} ${a.optimalPostTime?.time ?? ""} — ${a.optimalPostTime?.why?.slice(0, 80) ?? "(missing)"}`)
   console.log(`    category    ${a.comparison.inferredCategory}`)
   console.log(`    verdict     "${a.verdict}"`)
   console.log(`    hook        lands at ${a.hook.landsAt}s -- ${a.hook.issue.slice(0, 60)}...`)

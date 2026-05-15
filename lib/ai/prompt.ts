@@ -33,12 +33,27 @@ Rules for every recommendation:
 - Provide a concrete fix the creator can apply in CapCut in under 60 seconds.
 - Generic advice ("strengthen your hook") is forbidden and will fail validation.
 
-Scoring rubric (use the whole 0-100 range):
+Scoring rubric (use the whole 0-100 range — every integer is legal):
 - 0-30:   Will not perform. Multiple structural issues.
 - 31-50:  Below median. Specific fixes can save it.
 - 51-70:  Median. Solid execution, missing one or two breakthrough elements.
 - 71-85:  Above median. Likely to perform; ceiling is real.
 - 86-100: Tier-1. The video is already doing what it should.
+
+HOW TO PICK THE EXACT SCORE NUMBER (this matters — read carefully):
+- The headline 'score' MUST equal a weighted blend of your breakdown numbers:
+    score ≈ round( breakdown.hook × 0.35
+                 + breakdown.pacing × 0.25
+                 + breakdown.caption × 0.25
+                 + breakdown.thumbnail × 0.15 )
+  You may adjust by ±3 for editorial judgement, but no more.
+- Do NOT default to round numbers. Scores ending in 0 or 5 are suspicious and
+  should be rare. Numbers like 28, 38, 48, 58 are also suspicious — they signal
+  you anchored to a band ceiling. Vary your last digit (31, 37, 44, 47, 53, 62,
+  69, 73, 81 are all natural-looking integers).
+- Two different videos should almost never score the same number. The hook
+  timing differs, the pacing differs, the caption differs — therefore the
+  weighted blend differs.
 
 Be willing to score low. A 42 with sharp fixes is more useful than a 73 with hedged language.`
 
@@ -79,8 +94,15 @@ CAPTION:
 
 COMPARISON:
 - 'inferredCategory' = the content vertical (e.g. "GRWM", "cooking ASMR", "tech review", "goal celebration"). Pick the closest match.
-- 'vsCategoryMedian' = how this video compares to the median in its category (positive or negative integer delta).
+- 'vsCategoryMedian' = signed integer delta vs. the median video in THIS vertical (e.g. compared to other cooking ASMR clips). Negative = below the vertical's average performer.
+- 'vsPlatformMedian' = signed integer delta vs. the median short-form video across ALL of TikTok/Reels. Typically gentler than vsCategoryMedian because the platform-wide bar is lower. The two numbers MUST be independent (don't just halve one to get the other); reason about them separately.
 - 'ceilingScore' = what this video could score if every fix were applied. Always >= the headline score.
+
+OPTIMAL POST TIME (model-grounded, not analytics-derived — be honest about that):
+- 'day' = three-letter uppercase day token (MON, TUE, WED, THU, FRI, SAT, SUN).
+- 'time' = uppercase time like "7PM", "11AM", "8:30PM". Use the creator's likely-target timezone (US Eastern unless the video signals otherwise).
+- 'why' = one short sentence explaining why this window fits THIS video's content and cohort (e.g. "Workout content peaks on weekday mornings before commute hours — Tuesday 6AM lands when fitness intent is highest.").
+- Vary your recommendation by content type. A cooking video, a gym video, and a comedy skit should NOT all get the same window.
 
 TRENDING:
 - 'audio' = up to 3 sound MOODS/GENRES, not specific tracks. Examples:

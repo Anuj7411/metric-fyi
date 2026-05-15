@@ -95,8 +95,19 @@ export function ReportView({ videoUrl }: { videoUrl: string }) {
    ───────────────────────────────────────────────────────────── */
 
 function Hero({ analysis }: { analysis: Analysis }) {
-  const vsMedian = deriveVsMedian(analysis.comparison.vsCategoryMedian)
-  const postTime = derivePostTime(analysis.comparison.inferredCategory)
+  // Prefer Gemini-supplied vsPlatformMedian; fall back to the derived split
+  // for back-compat with older reports written before the field existed.
+  const vsMedian =
+    analysis.comparison.vsPlatformMedian ??
+    deriveVsMedian(analysis.comparison.vsCategoryMedian)
+  // Prefer Gemini-supplied optimalPostTime; fall back to the category-regex
+  // map for older reports.
+  const postTime =
+    analysis.optimalPostTime ??
+    derivePostTime(analysis.comparison.inferredCategory)
+  const postTimeWhy =
+    analysis.optimalPostTime?.why ??
+    "Model-suggested peak engagement window — use your own analytics for personalized timing"
   const bars = [
     { l: "HOOK", v: analysis.breakdown.hook },
     { l: "PACING", v: analysis.breakdown.pacing },
@@ -130,7 +141,7 @@ function Hero({ analysis }: { analysis: Analysis }) {
               JUST NOW
             </span>
             <span
-              title="Model-suggested peak engagement window — use your own analytics for personalized timing"
+              title={postTimeWhy}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 10,
@@ -180,7 +191,10 @@ function Hero({ analysis }: { analysis: Analysis }) {
                   lineHeight: 1.85,
                 }}
               >
-                vs MEDIAN ·{" "}
+                <span title="Delta vs. the median short-form video across all of TikTok/Reels" style={{ cursor: "help" }}>
+                  vs PLATFORM
+                </span>{" "}
+                ·{" "}
                 <span
                   style={{
                     color: vsMedian < 0 ? "var(--color-hot)" : "var(--color-signal)",
@@ -190,7 +204,13 @@ function Hero({ analysis }: { analysis: Analysis }) {
                   {vsMedian}
                 </span>
                 <br />
-                vs CATEGORY ·{" "}
+                <span
+                  title={`Delta vs. the median ${analysis.comparison.inferredCategory} video`}
+                  style={{ cursor: "help" }}
+                >
+                  vs CATEGORY
+                </span>{" "}
+                ·{" "}
                 <span
                   style={{
                     color:
@@ -203,7 +223,10 @@ function Hero({ analysis }: { analysis: Analysis }) {
                   {analysis.comparison.vsCategoryMedian}
                 </span>
                 <br />
-                CEILING ·{" "}
+                <span title="Score this video could reach if every fix were applied" style={{ cursor: "help" }}>
+                  CEILING
+                </span>{" "}
+                ·{" "}
                 <span style={{ color: "var(--color-signal)" }}>
                   {analysis.comparison.ceilingScore} ↑
                 </span>
@@ -222,7 +245,7 @@ function Hero({ analysis }: { analysis: Analysis }) {
             }}
           >
             <span>
-              vs MEDIAN ·{" "}
+              vs PLAT ·{" "}
               <span style={{ color: vsMedian < 0 ? "var(--color-hot)" : "var(--color-signal)" }}>
                 {vsMedian >= 0 ? "+" : ""}
                 {vsMedian}

@@ -140,10 +140,27 @@ export async function POST(
     )
   }
 
+  // 7b. Anti-anchoring safety net. Gemini tends to snap the headline `score`
+  //     to a small set of favourite integers (28 / 38 / 48 in observed runs)
+  //     regardless of how the breakdown actually shakes out. If the model's
+  //     score drifts too far from a weighted blend of its own breakdown
+  //     numbers, snap it back. Same weights as the prompt asks for so the
+  //     model and server stay aligned.
+  const a = result.analysis
+  const weighted = Math.round(
+    a.breakdown.hook * 0.35 +
+      a.breakdown.pacing * 0.25 +
+      a.breakdown.caption * 0.25 +
+      a.breakdown.thumbnail * 0.15,
+  )
+  if (Math.abs(a.score - weighted) > 8) {
+    a.score = Math.max(0, Math.min(100, weighted))
+  }
+
   // 8. Persist the analysis JSON
   const { error: saveErr } = await supabase.rpc("save_analysis", {
     p_id: id,
-    p_analysis: result.analysis,
+    p_analysis: a,
   })
 
   if (saveErr) {
@@ -156,7 +173,7 @@ export async function POST(
 
   return NextResponse.json({
     status: "ready",
-    analysis: result.analysis,
+    analysis: a,
     tokensUsed: result.tokensUsed,
   })
 }
