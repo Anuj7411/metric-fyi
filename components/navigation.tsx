@@ -6,6 +6,12 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Logo } from "@/components/marketing/Logo"
 import { MonoTag } from "@/components/report/atoms"
 import { ease } from "@/lib/motion"
+import {
+  clearHistory,
+  fmtRelativeTime,
+  readHistory,
+  type HistoryEntry,
+} from "@/lib/history"
 
 /**
  * Top navigation rendered on every page.
@@ -21,7 +27,7 @@ import { ease } from "@/lib/motion"
  * MonoTag captions, Clash Display for headings, signal lime for accents,
  * 220ms `ease` (the [.2,.8,.2,1] curve) for transitions.
  */
-type ModalKind = "how" | "examples" | null
+type ModalKind = "how" | "examples" | "history" | null
 
 export function Navigation() {
   const [modal, setModal] = useState<ModalKind>(null)
@@ -58,6 +64,7 @@ export function Navigation() {
         >
           <NavButton onClick={() => setModal("how")}>How it works</NavButton>
           <NavButton onClick={() => setModal("examples")}>Examples</NavButton>
+          <NavButton onClick={() => setModal("history")}>History</NavButton>
         </div>
       </nav>
 
@@ -74,6 +81,15 @@ export function Navigation() {
             onClose={() => setModal(null)}
           >
             <ExamplesContent onPick={() => setModal(null)} />
+          </Modal>
+        )}
+        {modal === "history" && (
+          <Modal
+            key="history"
+            title="HISTORY"
+            onClose={() => setModal(null)}
+          >
+            <HistoryContent onPick={() => setModal(null)} />
           </Modal>
         )}
       </AnimatePresence>
@@ -412,6 +428,278 @@ function ExamplesContent({ onPick }: { onPick: () => void }) {
         and test-videos.co.uk (CC0). Real Gemini analyses run on each.
       </p>
     </div>
+  )
+}
+
+/* ── HISTORY content ─────────────────────────────────────────── */
+
+function HistoryContent({ onPick }: { onPick: () => void }) {
+  const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
+
+  useEffect(() => {
+    setEntries(readHistory())
+  }, [])
+
+  // Loading state — only renders for ~1 frame before useEffect commits
+  if (entries === null) {
+    return (
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.1em",
+        }}
+      >
+        Loading…
+      </div>
+    )
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-col gap-5">
+        <h2
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 600,
+            fontSize: "clamp(28px, 4vw, 40px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.025em",
+            color: "var(--color-text)",
+            margin: 0,
+          }}
+        >
+          No reports yet.{" "}
+          <em
+            style={{
+              fontFamily: "var(--font-italic)",
+              fontStyle: "italic",
+              color: "var(--color-signal)",
+              fontWeight: 500,
+            }}
+          >
+            Drop a video.
+          </em>
+        </h2>
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            color: "var(--color-text-dim)",
+            lineHeight: 1.55,
+            margin: 0,
+            maxWidth: 520,
+          }}
+        >
+          Anything you upload from this browser will show up here. The list
+          is stored locally — it won&apos;t follow you to another device,
+          and it disappears if you clear browser data.
+        </p>
+        <button
+          onClick={onPick}
+          style={{
+            alignSelf: "flex-start",
+            marginTop: 8,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.12em",
+            background: "var(--color-signal)",
+            color: "var(--color-ink)",
+            border: "none",
+            padding: "12px 20px",
+            cursor: "pointer",
+            textTransform: "uppercase",
+          }}
+        >
+          ↗ Upload one
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <h2
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 600,
+            fontSize: "clamp(28px, 4vw, 40px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.025em",
+            color: "var(--color-text)",
+            margin: 0,
+          }}
+        >
+          {entries.length} {entries.length === 1 ? "report" : "reports"}.{" "}
+          <em
+            style={{
+              fontFamily: "var(--font-italic)",
+              fontStyle: "italic",
+              color: "var(--color-signal)",
+              fontWeight: 500,
+            }}
+          >
+            Click any.
+          </em>
+        </h2>
+        <button
+          onClick={() => {
+            if (
+              window.confirm(
+                "Clear all reports from this device? The reports themselves stay reachable by URL, just removed from this list.",
+              )
+            ) {
+              clearHistory()
+              setEntries([])
+            }
+          }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            letterSpacing: "0.15em",
+            color: "var(--color-text-mute)",
+            background: "transparent",
+            border: "1px solid var(--color-line)",
+            padding: "6px 10px",
+            cursor: "pointer",
+            textTransform: "uppercase",
+          }}
+        >
+          Clear all
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {entries.map((e) => (
+          <HistoryCard key={e.id} entry={e} onPick={onPick} />
+        ))}
+      </div>
+
+      <p
+        className="border-t pt-4"
+        style={{
+          borderColor: "var(--color-line)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.05em",
+          lineHeight: 1.6,
+          margin: 0,
+        }}
+      >
+        ↳ Stored on this device only. Won&apos;t sync to other browsers.
+        Clear via your browser settings or the button above.
+      </p>
+    </div>
+  )
+}
+
+function HistoryCard({
+  entry,
+  onPick,
+}: {
+  entry: HistoryEntry
+  onPick: () => void
+}) {
+  const hasScore = entry.score !== undefined
+  const scoreColor = hasScore
+    ? entry.score! < 50
+      ? "var(--color-hot)"
+      : "var(--color-signal)"
+    : "var(--color-text-mute)"
+  const isFailed = entry.status === "failed"
+  const isPending = entry.status === "pending" && !hasScore
+
+  return (
+    <Link
+      href={`/r/${entry.id}`}
+      onClick={onPick}
+      className="grid grid-cols-[auto_1fr_auto] gap-4 md:gap-5 p-4 md:p-5 border items-center"
+      style={{
+        borderColor: "var(--color-line)",
+        background: "rgba(255,255,255,0.02)",
+        textDecoration: "none",
+        transition: "border-color 120ms, background 120ms",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = isFailed
+          ? "var(--color-hot)"
+          : "var(--color-signal)"
+        e.currentTarget.style.background = isFailed
+          ? "rgba(255,74,28,0.04)"
+          : "rgba(198,255,61,0.04)"
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "var(--color-line)"
+        e.currentTarget.style.background = "rgba(255,255,255,0.02)"
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 600,
+          fontSize: 48,
+          lineHeight: 0.85,
+          color: scoreColor,
+          letterSpacing: "-0.04em",
+          fontVariantNumeric: "tabular-nums",
+          minWidth: 64,
+          textAlign: "center",
+        }}
+      >
+        {hasScore ? entry.score : isFailed ? "✗" : "—"}
+      </div>
+      <div className="min-w-0">
+        <div
+          className="truncate"
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text)",
+            letterSpacing: "0.02em",
+          }}
+          title={entry.fileName}
+        >
+          {entry.fileName}
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: isPending
+              ? "var(--color-gold)"
+              : isFailed
+                ? "var(--color-hot)"
+                : "var(--color-text-mute)",
+            letterSpacing: "0.15em",
+            textTransform: "uppercase",
+            marginTop: 6,
+          }}
+        >
+          {isPending
+            ? "Pending"
+            : isFailed
+              ? "Failed"
+              : entry.category
+                ? entry.category.toUpperCase()
+                : "Ready"}{" "}
+          · {fmtRelativeTime(entry.createdAt)}
+        </div>
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 13,
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.1em",
+        }}
+      >
+        →
+      </div>
+    </Link>
   )
 }
 

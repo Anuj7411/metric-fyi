@@ -6,6 +6,7 @@ import { Footer } from "@/components/footer"
 import { ReportView } from "@/components/report/ReportView"
 import { PendingClient } from "@/components/report/PendingClient"
 import { ShareControls } from "@/components/report/ShareControls"
+import { HistorySync } from "@/components/report/HistorySync"
 import { ReportProvider } from "@/contexts/report-context"
 import { Analysis } from "@/lib/ai/schema"
 
@@ -186,6 +187,15 @@ export default async function ReportPage({
           <PendingClient id={data.id} videoUrl={videoUrl} />
         )}
       </ReportProvider>
+
+      {/* Update local history entry (if any) — only touches entries the
+          user created via upload. No-op when there's no matching entry. */}
+      <HistorySync
+        id={data.id}
+        status={data.status}
+        score={initialAnalysis?.score}
+        category={initialAnalysis?.comparison.inferredCategory}
+      />
 
       <Footer />
     </main>

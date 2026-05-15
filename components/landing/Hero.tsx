@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { UploadCard } from "./UploadCard"
 import { SampleVideoPicker } from "./SampleVideoPicker"
 import { createClient } from "@/lib/supabase/client"
+import { writeHistoryEntry } from "@/lib/history"
 import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
 
 type Picked =
@@ -88,7 +89,17 @@ export function Hero() {
         return
       }
 
-      // 3. Navigate to the report page
+      // 3. Save to local history so the user can find this report again
+      // from the same browser without an account. localStorage-only —
+      // doesn't sync across devices; see lib/history.ts for the contract.
+      writeHistoryEntry({
+        id,
+        fileName: file.name,
+        fileSize: file.size,
+        status: "pending",
+      })
+
+      // 4. Navigate to the report page
       toast.success("Uploaded. Opening report.", { id: toastId })
       router.push(`/r/${id}`)
     } catch (err) {
