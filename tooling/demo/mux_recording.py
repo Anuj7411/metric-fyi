@@ -100,8 +100,14 @@ def run_ffmpeg(args: list, label: str = "ffmpeg") -> None:
 
 # ── Core flow ──────────────────────────────────────────────────────────────
 
-async def synth_all(rate: str, ffmpeg: str) -> tuple[list[float], Path]:
+async def synth_all(
+    rate: str, ffmpeg: str, inter_segment_silence: float = 0.0
+) -> tuple[list[float], Path]:
     """Synth every segment at the given rate. Concat into narration.mp3.
+    If inter_segment_silence > 0, insert that many seconds of silence
+    between consecutive segments so the narration breathes naturally
+    across a longer video.
+
     Returns (segment_durations, narration_path)."""
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     durations: list[float] = []
@@ -115,11 +121,30 @@ async def synth_all(rate: str, ffmpeg: str) -> tuple[list[float], Path]:
         preview = text[:60].replace("\n", " ")
         print(f"  [{i:02d}] {d:5.2f}s  {preview}...")
 
+    # If we need silence between segments, synth a single silence clip
+    # and interleave it in the concat list.
+    if inter_segment_silence > 0.05:
+        silence_path = AUDIO_DIR / "silence.mp3"
+        # anullsrc generates silence; mono at 24kHz matches edge-tts output.
+        run_ffmpeg(
+            [ffmpeg, "-y",
+             "-f", "lavfi",
+             "-i", f"anullsrc=r=24000:cl=mono",
+             "-t", f"{inter_segment_silence:.3f}",
+             "-q:a", "9", "-acodec", "libmp3lame",
+             str(silence_path)],
+            label=f"silence {inter_segment_silence:.2f}s",
+        )
+        lines: list[str] = []
+        for i, p in enumerate(paths):
+            lines.append(f"file '{p.resolve().as_posix()}'")
+            if i < len(paths) - 1:
+                lines.append(f"file '{silence_path.resolve().as_posix()}'")
+    else:
+        lines = [f"file '{p.resolve().as_posix()}'" for p in paths]
+
     concat_list = OUT_DIR / "concat.txt"
-    concat_list.write_text(
-        "\n".join(f"file '{p.resolve().as_posix()}'" for p in paths),
-        encoding="utf-8",
-    )
+    concat_list.write_text("\n".join(lines), encoding="utf-8")
     narration = OUT_DIR / "narration.mp3"
     run_ffmpeg(
         [ffmpeg, "-y", "-f", "concat", "-safe", "0",
@@ -144,38 +169,62 @@ def write_captions(durations: list[float], pads: list[float], path: Path) -> Non
     path.write_text("\n".join(chunks) + "\n", encoding="utf-8")
 
 
-def pick_fit_rate(video_seconds: float, base_seconds: float) -> tuple[str, str]:
-    """Given the user's video length and a base-rate narration length,
-    pick a speech rate that fits. Returns (rate_string, status_message).
+def pick_fit_strategy(
+    video_seconds: float, base_seconds: float
+) -> tuple[str, float, str]:
+    """Pick the right combination of speech rate + inter-segment silence
+    so narration fills the user's video naturally.
 
-    Edge TTS's rate parameter is roughly: ratio = 1 + rate%/100
-    If base narration takes 100s and video is 120s, we want narration to
-    take 120s -> ratio = 100/120 = 0.83 -> rate = -17%.
+    Returns (rate_string, inter_segment_silence_sec, status_message).
+
+    Logic:
+      - If a rate within ±25% can fit the script into the video, use that
+        alone with no silence padding.
+      - If the video is much longer than the script can stretch (would
+        require rate < -25%), use rate -25% AND insert silence between
+        segments so the script breathes across the full video.
+      - If the video is much shorter than the script (would require rate
+        > +25%), use rate +25% — narration will trim at the end.
     """
     if base_seconds <= 0:
-        return DEFAULT_RATE, "could not measure base narration; using default"
+        return DEFAULT_RATE, 0.0, "could not measure base; using default"
 
     desired_ratio = base_seconds / video_seconds
-    # Convert to a percentage adjustment relative to "no change".
     rate_pct = (desired_ratio - 1.0) * 100.0
 
-    # Clamp to a range where the voice still sounds human.
     HARD_MIN, HARD_MAX = -25.0, 25.0
-    clamped = max(HARD_MIN, min(HARD_MAX, rate_pct))
 
-    if clamped == rate_pct:
-        msg = f"perfect fit (rate {format_rate(clamped)})"
-    elif rate_pct < HARD_MIN:
-        diff = base_seconds / (1 + clamped / 100) - video_seconds
-        msg = (f"video {video_seconds:.0f}s is much longer than the "
-               f"narration script. Rate clamped to {format_rate(clamped)}; "
-               f"final video will have ~{diff:.0f}s of silence at the end")
-    else:
-        diff = base_seconds / (1 + clamped / 100) - video_seconds
-        msg = (f"video {video_seconds:.0f}s is much shorter than the "
-               f"narration script. Rate clamped to {format_rate(clamped)}; "
-               f"narration will be cut off ~{abs(diff):.0f}s early")
-    return format_rate(clamped), msg
+    if HARD_MIN <= rate_pct <= HARD_MAX:
+        return format_rate(rate_pct), 0.0, (
+            f"rate {format_rate(rate_pct)} fits the script into "
+            f"{video_seconds:.0f}s of video"
+        )
+
+    if rate_pct > HARD_MAX:
+        # Video shorter than script can compress to.
+        clamped_rate = format_rate(HARD_MAX)
+        new_narration = base_seconds / (1 + HARD_MAX / 100)
+        diff = new_narration - video_seconds
+        return clamped_rate, 0.0, (
+            f"video {video_seconds:.0f}s shorter than the script can fit. "
+            f"Rate clamped to {clamped_rate}; final narration will end "
+            f"about {diff:.0f}s before the video does"
+        )
+
+    # rate_pct < HARD_MIN: video much longer than script. Slow the voice
+    # to -25% and distribute the remaining slack as silence between
+    # segments so the viewer hears measured pacing, not robot speech.
+    clamped_rate = HARD_MIN
+    slowed_narration = base_seconds / (1 + clamped_rate / 100)  # = base/0.75
+    extra = video_seconds - slowed_narration
+    n_gaps = max(1, len(SEGMENTS) - 1)
+    silence = max(0.0, extra / n_gaps)
+    return format_rate(clamped_rate), silence, (
+        f"video is {video_seconds:.0f}s — longer than the script can "
+        f"stretch. Using rate {format_rate(clamped_rate)} plus "
+        f"{silence:.1f}s pauses between segments so it breathes across "
+        f"the full video"
+    )
 
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -218,32 +267,32 @@ async def main():
     print(f"  Video         : {video_path}")
     print(f"  Video length  : {video_dur:.1f}s")
 
-    # ── Decide on rate ───────────────────────────────────────────────────
+    # ── Decide on rate + inter-segment silence ───────────────────────────
+    inter_silence = 0.0
     if args.rate == "auto":
-        # Synth once at the default rate to measure base length.
-        print(f"\n== Probing base narration length at {DEFAULT_RATE} ==")
+        # Probe base narration length at the default rate.
+        print(f"\n== Probing base narration at {DEFAULT_RATE} ==")
         base_durations, _ = await synth_all(DEFAULT_RATE, ffmpeg)
         base_total = sum(base_durations)
         print(f"  Base narration: {base_total:.1f}s")
 
-        rate, msg = pick_fit_rate(video_dur, base_total)
-        print(f"\n== Fitting narration to video ==")
-        print(f"  {msg}")
-        print(f"\n== Re-synthesizing at {rate} ==")
-        durations, narration_path = await synth_all(rate, ffmpeg)
+        rate, inter_silence, msg = pick_fit_strategy(video_dur, base_total)
+        print(f"\n== Strategy ==\n  {msg}")
+        print(f"\n== Re-synthesizing at {rate}"
+              f"{f' with {inter_silence:.1f}s pauses' if inter_silence > 0.05 else ''} ==")
+        durations, narration_path = await synth_all(
+            rate, ffmpeg, inter_segment_silence=inter_silence,
+        )
     else:
         rate = args.rate
         print(f"\n== Synthesizing at {rate} ==")
         durations, narration_path = await synth_all(rate, ffmpeg)
 
-    total_audio = sum(durations)
+    total_audio = sum(durations) + inter_silence * max(0, len(durations) - 1)
     print(f"\n  Final narration: {total_audio:.1f}s  (video: {video_dur:.1f}s)")
 
-    # ── Build SRT with pads to spread captions across the video ──────────
-    # If audio is shorter than video, distribute extra time as pads between
-    # segments so captions stay paced rather than crammed at the start.
-    extra = max(0.0, video_dur - total_audio)
-    pads = [extra / len(durations)] * len(durations) if extra > 0.5 else [0.0] * len(durations)
+    # ── Build SRT cues aligned to the actual audio (including silences) ──
+    pads = [inter_silence] * len(durations)
     captions_path = OUT_DIR / "captions.srt"
     write_captions(durations, pads, captions_path)
     print(f"  Captions       : {captions_path}")
