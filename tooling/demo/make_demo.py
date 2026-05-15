@@ -50,7 +50,7 @@ SAMPLE_REPORT_URL = (
 )
 
 VOICE = "en-US-AriaNeural"  # alternatives: en-US-GuyNeural, en-GB-RyanNeural
-RATE = "-5%"                # negative = slower; "+10%" would speed up
+DEFAULT_RATE = "-5%"        # negative = slower; "+10%" would speed up
 
 OUT_DIR = Path(__file__).parent / "output"
 AUDIO_DIR = OUT_DIR / "audio"
@@ -203,14 +203,14 @@ def srt_timestamp(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-async def synthesize_segment(text: str, out_path: Path):
-    communicate = edge_tts.Communicate(text, VOICE, rate=RATE)
+async def synthesize_segment(text: str, out_path: Path, rate: str = DEFAULT_RATE):
+    communicate = edge_tts.Communicate(text, VOICE, rate=rate)
     await communicate.save(str(out_path))
 
 
 # ── Pipeline ───────────────────────────────────────────────────────────────
 
-async def main(audio_only: bool = False):
+async def main(audio_only: bool = False, rate: str = DEFAULT_RATE):
     OUT_DIR.mkdir(exist_ok=True)
     AUDIO_DIR.mkdir(exist_ok=True)
     if not audio_only:
@@ -228,7 +228,7 @@ async def main(audio_only: bool = False):
     audio_paths: list[Path] = []
     for i, (text, _, _) in enumerate(SEGMENTS):
         path = AUDIO_DIR / f"seg_{i:02d}.mp3"
-        await synthesize_segment(text, path)
+        await synthesize_segment(text, path, rate=rate)
         dur = mp3_duration_seconds(path, ffmpeg)
         durations.append(dur)
         audio_paths.append(path)
@@ -361,5 +361,11 @@ if __name__ == "__main__":
         help="Skip browser automation. Just produce narration.mp3 + captions.srt "
              "so you can record the screen manually with Loom.",
     )
+    parser.add_argument(
+        "--rate",
+        default=DEFAULT_RATE,
+        help="Speech rate adjustment for edge-tts (e.g. '-10%%' slower, '+15%%' "
+             "faster). Default: %(default)s.",
+    )
     args = parser.parse_args()
-    asyncio.run(main(audio_only=args.audio_only))
+    asyncio.run(main(audio_only=args.audio_only, rate=args.rate))

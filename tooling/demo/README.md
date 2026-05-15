@@ -45,32 +45,43 @@ touch it** — clicks and scrolls are scripted. The whole run takes ~90 sec.
 
 Outputs `final.mp4` + `captions.srt`.
 
-### Mode 2 — Record-then-mux (recommended for Loom)
+### Mode 2 — Record-then-mux (recommended)
 
-You record a silent screen capture in Loom, download the raw MP4, and the
-muxer bakes the AI narration + burned-in captions onto it. **No audio sync
-during recording — you just click through the demo silently.**
+You record a silent screen capture at whatever pace feels natural — no
+clock-watching, no exact target duration. The muxer measures your video
+length and **auto-fits the narration to match it**.
 
 ```powershell
-# Step 1: generate narration + captions (15 sec)
-python make_demo.py --audio-only
+# Step 1: record your screen in Loom (no mic, no system audio).
+#         Just click through the demo silently. End the recording when
+#         you've covered everything — anywhere from ~1:00 to ~3:00 works.
+#         Download the raw MP4 from Loom.
 
-# Step 2: record your screen in Loom (1:40 target, no mic, no system audio)
-# Download the raw MP4 from Loom.
-
-# Step 3: mux narration + burned-in captions onto your recording
-python mux_recording.py path/to/your-loom-export.mp4
+# Step 2: one command does everything else
+python mux_recording.py "C:\path\to\your-loom-export.mp4"
 ```
 
-Outputs `output/final.mp4` with the narration as the audio track and
-captions burned into the video at the bottom. Re-upload to Loom as a
-fresh upload.
+What this does:
+1. Measures your video's duration.
+2. Probes the base narration length at default speed.
+3. Picks a speech rate (within −25% to +25%) that fits the script into
+   your video.
+4. Synthesizes narration at the chosen rate.
+5. Builds an SRT with cue timings matching the final audio.
+6. Burns the captions into the video as a styled subtitle overlay.
+7. Mixes the narration as the audio track.
+8. Writes `output/final.mp4` ready to upload to Loom.
 
-Flags for `mux_recording.py`:
-- `--no-burn` — don't burn captions into the video; embed them as a soft
-  subtitle track instead. Upload `captions.srt` to Loom separately.
-- `--regenerate` — force-regenerate narration before muxing.
-- `--output PATH` — write to a custom output location.
+If your video is way too short (< ~1 min) or way too long (> ~3 min) the
+rate clamps and you'll get a warning showing how much trailing silence or
+audio-cutoff to expect. Just re-record in those edge cases.
+
+Flags:
+- `--rate "-10%"` — override auto-fit and pick a fixed rate.
+- `--no-burn` — embed captions as a soft subtitle track instead of
+  burning them in. Upload `captions.srt` to Loom separately.
+- `--output PATH` — write the final video somewhere other than
+  `output/final.mp4`.
 
 ### Mode 3 — Audio-only, play it during a live recording
 
