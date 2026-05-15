@@ -34,14 +34,82 @@ from pathlib import Path
 import edge_tts
 import imageio_ffmpeg
 
-# Re-use the script + helpers from make_demo.
-from make_demo import (
-    AUDIO_DIR,
-    OUT_DIR,
-    SEGMENTS,
-    VOICE,
-    DEFAULT_RATE,
-)
+# Re-use directories + voice config from make_demo, but we define our own
+# BEATS list below tuned to the user's actual recorded video.
+from make_demo import AUDIO_DIR, OUT_DIR, VOICE, DEFAULT_RATE
+
+# ── BEATS: text + target duration aligned to the user's recording ──────────
+# Each entry: (narration text, target_seconds_from_start_of_THIS_beat_to_next)
+# Total of all targets should equal the user's video duration.
+#
+# Synthesis: each beat is synthesized at default speed. If the audio is
+# shorter than its target, silence pads to the target. If it overshoots,
+# the next beat starts late — keep word counts under the target budget.
+#
+# Word budget rule of thumb: ~2.3 words per target-second.
+BEATS: list[tuple[str, float]] = [
+    # 0:00–0:12 — landing page (12s, ~27 word budget)
+    ("This is METRIC dot F Y I — my eight ex Engineer Go Viral Clone "
+     "contest entry. Drop a short form video, get a brutally honest score "
+     "with timestamped fixes.",
+     12.0),
+    # 0:12–0:17 — hovering nav (5s, ~11 word budget)
+    ("Three nav buttons up top — How it Works, Examples, and History.",
+     5.0),
+    # 0:17–0:27 — How it Works modal (10s)
+    ("How it Works lays out three steps. Upload, the AI watches every "
+     "frame, you get fixes with exact timestamps.",
+     10.0),
+    # 0:27–0:36 — History modal (9s, ~20 word budget)
+    ("History keeps every report you've analyzed on this device in local "
+     "storage. No signup, no account — come back to your work anytime.",
+     9.0),
+    # 0:36–0:49 — upload from local storage (13s, ~30 word budget)
+    ("Now let's upload a fresh video. The browser uploads directly to "
+     "Supabase Storage, bypassing Vercel's body cap, and only a pending "
+     "row goes through our API — keeps the architecture clean.",
+     13.0),
+    # 0:49–0:55 — analyzing screen (6s)
+    ("The video goes to Gemini Flash. Analysis takes about twenty seconds.",
+     6.0),
+    # 0:55–1:06 — score page + breakdown bars + comparison (11s)
+    ("Here's the report. Headline score, four breakdown bars, and "
+     "comparison numbers — versus platform, versus niche, ceiling.",
+     11.0),
+    # 1:06–1:41 — video timeline / cuts / frames / clicking (35s, ~80 words)
+    ("The video player has a unified scrubber where playback, the hook "
+     "landing dot, pacing cuts, and dead air ranges all share one "
+     "horizontal timeline. Every timestamp shown anywhere in the report "
+     "is a clickable citation — click any chip, the video jumps to that "
+     "frame and the matching marker on the scrubber pulses. Real frame "
+     "thumbnails are extracted client side using a hidden video element "
+     "and a canvas — no server processing, no ffmpeg, just the actual "
+     "frames pulled straight from your upload.",
+     35.0),
+    # 1:41–1:45 — FIX 01 hook (4s)
+    ("Fix one. Hook, with three ranked rewrites.",
+     4.0),
+    # 1:45–1:50 — FIX 02 pacing (5s)
+    ("Fix two. Pacing — cuts and dead air flagged.",
+     5.0),
+    # 1:50–1:57 — FIX 03 thumbnail (7s)
+    ("Fix three. Thumbnail — current cover versus proposed best frame.",
+     7.0),
+    # 1:57–2:01 — FIX 04 caption (4s)
+    ("Fix four. Caption rewrites.",
+     4.0),
+    # 2:01–2:11 — What If toggles (10s)
+    ("The wow moment. What If simulator. Toggle each fix, score morphs. "
+     "All four on, tier one badge fires.",
+     10.0),
+    # 2:11–2:21 — Trending audio + hashtags (10s)
+    ("Trending audio as mood descriptors, plus five hashtags grounded in "
+     "your video's content. No hallucinated track names.",
+     10.0),
+    # 2:21–2:27 — History close (6s)
+    ("History pins reports here. Built in nine days with Claude.",
+     6.0),
+]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -100,72 +168,81 @@ def run_ffmpeg(args: list, label: str = "ffmpeg") -> None:
 
 # ── Core flow ──────────────────────────────────────────────────────────────
 
-async def synth_all(
-    rate: str, ffmpeg: str, inter_segment_silence: float = 0.0
-) -> tuple[list[float], Path]:
-    """Synth every segment at the given rate. Concat into narration.mp3.
-    If inter_segment_silence > 0, insert that many seconds of silence
-    between consecutive segments so the narration breathes naturally
-    across a longer video.
+async def synth_per_beat(
+    rate: str, ffmpeg: str
+) -> tuple[list[float], list[float], Path]:
+    """Synthesize each beat and pad silence so the audio sits exactly at
+    its target start time.
 
-    Returns (segment_durations, narration_path)."""
+    Returns (audio_durations, silence_after, narration_path).
+    The narration MP3 plays beat 0 → silence → beat 1 → silence → ... so
+    that beat i starts at sum(target[:i]) in the final mix.
+    """
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    durations: list[float] = []
-    paths: list[Path] = []
-    for i, (text, _action, _pad) in enumerate(SEGMENTS):
+    audio_durations: list[float] = []
+    silences: list[float] = []
+    audio_paths: list[Path] = []
+
+    for i, (text, target) in enumerate(BEATS):
         p = AUDIO_DIR / f"seg_{i:02d}.mp3"
         await synth(text, p, rate)
-        d = media_duration_seconds(p, ffmpeg)
-        durations.append(d)
-        paths.append(p)
+        actual = media_duration_seconds(p, ffmpeg)
+        silence_after = max(0.0, target - actual)
+        if actual > target + 0.5:
+            print(f"  [{i:02d}] {actual:5.2f}s OVER target {target}s "
+                  f"-- consider trimming wording")
+        audio_durations.append(actual)
+        silences.append(silence_after)
+        audio_paths.append(p)
         preview = text[:60].replace("\n", " ")
-        print(f"  [{i:02d}] {d:5.2f}s  {preview}...")
+        print(f"  [{i:02d}] {actual:5.2f}s + {silence_after:4.2f}s pad "
+              f"(target {target:4.1f}s)  {preview}...")
 
-    # If we need silence between segments, synth a single silence clip
-    # and interleave it in the concat list.
-    if inter_segment_silence > 0.05:
-        silence_path = AUDIO_DIR / "silence.mp3"
-        # anullsrc generates silence; mono at 24kHz matches edge-tts output.
-        run_ffmpeg(
-            [ffmpeg, "-y",
-             "-f", "lavfi",
-             "-i", f"anullsrc=r=24000:cl=mono",
-             "-t", f"{inter_segment_silence:.3f}",
-             "-q:a", "9", "-acodec", "libmp3lame",
-             str(silence_path)],
-            label=f"silence {inter_segment_silence:.2f}s",
-        )
-        lines: list[str] = []
-        for i, p in enumerate(paths):
-            lines.append(f"file '{p.resolve().as_posix()}'")
-            if i < len(paths) - 1:
-                lines.append(f"file '{silence_path.resolve().as_posix()}'")
-    else:
-        lines = [f"file '{p.resolve().as_posix()}'" for p in paths]
+    # Build the narration MP3: each beat audio, followed by a silence clip
+    # of exactly the right length, then the next beat audio.
+    concat_lines: list[str] = []
+    for i, (audio_p, sil) in enumerate(zip(audio_paths, silences)):
+        concat_lines.append(f"file '{audio_p.resolve().as_posix()}'")
+        if sil > 0.01:
+            sil_p = AUDIO_DIR / f"sil_{i:02d}.mp3"
+            run_ffmpeg(
+                [ffmpeg, "-y",
+                 "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                 "-t", f"{sil:.3f}",
+                 "-q:a", "9", "-acodec", "libmp3lame",
+                 str(sil_p)],
+                label=f"silence {sil:.2f}s @ beat {i}",
+            )
+            concat_lines.append(f"file '{sil_p.resolve().as_posix()}'")
 
     concat_list = OUT_DIR / "concat.txt"
-    concat_list.write_text("\n".join(lines), encoding="utf-8")
+    concat_list.write_text("\n".join(concat_lines), encoding="utf-8")
     narration = OUT_DIR / "narration.mp3"
     run_ffmpeg(
         [ffmpeg, "-y", "-f", "concat", "-safe", "0",
          "-i", str(concat_list), "-c", "copy", str(narration)],
         label="concat narration",
     )
-    return durations, narration
+    return audio_durations, silences, narration
 
 
-def write_captions(durations: list[float], pads: list[float], path: Path) -> None:
+def write_captions_for_beats(
+    audio_durations: list[float], silences: list[float], path: Path
+) -> None:
+    """Cue i starts when beat i's audio starts, ends when its audio ends.
+    The silence after a beat is dead time with no caption — the next cue
+    appears when the next beat's audio kicks in."""
     chunks: list[str] = []
     t = 0.0
-    for i, ((text, _action, _pad), dur, pad) in enumerate(
-        zip(SEGMENTS, durations, pads)
+    for i, ((text, _target), dur, sil) in enumerate(
+        zip(BEATS, audio_durations, silences)
     ):
         start = t
         end = t + dur
         chunks.append(
             f"{i+1}\n{srt_timestamp(start)} --> {srt_timestamp(end)}\n{text}\n"
         )
-        t = end + pad
+        t = end + sil
     path.write_text("\n".join(chunks) + "\n", encoding="utf-8")
 
 
@@ -242,12 +319,6 @@ async def main():
              "Or pass an explicit rate like '-10%%' / '+15%%'.",
     )
     parser.add_argument(
-        "--no-burn",
-        action="store_true",
-        help="Don't burn captions into the video. Embed soft subtitles "
-             "instead and write captions.srt separately.",
-    )
-    parser.add_argument(
         "--output",
         default=str(OUT_DIR / "final.mp4"),
         help="Where to write the muxed video.",
@@ -267,74 +338,62 @@ async def main():
     print(f"  Video         : {video_path}")
     print(f"  Video length  : {video_dur:.1f}s")
 
-    # ── Decide on rate + inter-segment silence ───────────────────────────
-    inter_silence = 0.0
-    if args.rate == "auto":
-        # Probe base narration length at the default rate.
-        print(f"\n== Probing base narration at {DEFAULT_RATE} ==")
-        base_durations, _ = await synth_all(DEFAULT_RATE, ffmpeg)
-        base_total = sum(base_durations)
-        print(f"  Base narration: {base_total:.1f}s")
+    # ── Synthesize per-beat with target-aligned silence padding ──────────
+    # Use default-speed voice (0%) when running per-beat — the targets
+    # already control pacing. Slowing it makes beats overshoot.
+    rate = "+0%" if args.rate == "auto" else args.rate
+    total_target = sum(t for _text, t in BEATS)
+    print(f"\n  Total beat target: {total_target:.1f}s  "
+          f"(video: {video_dur:.1f}s)")
 
-        rate, inter_silence, msg = pick_fit_strategy(video_dur, base_total)
-        print(f"\n== Strategy ==\n  {msg}")
-        print(f"\n== Re-synthesizing at {rate}"
-              f"{f' with {inter_silence:.1f}s pauses' if inter_silence > 0.05 else ''} ==")
-        durations, narration_path = await synth_all(
-            rate, ffmpeg, inter_segment_silence=inter_silence,
-        )
-    else:
-        rate = args.rate
-        print(f"\n== Synthesizing at {rate} ==")
-        durations, narration_path = await synth_all(rate, ffmpeg)
+    if abs(total_target - video_dur) > 8:
+        print(f"  [warn] Beat targets total {total_target:.0f}s but your "
+              f"video is {video_dur:.0f}s. Adjust BEATS in mux_recording.py "
+              "if the drift is unacceptable.")
 
-    total_audio = sum(durations) + inter_silence * max(0, len(durations) - 1)
+    print(f"\n== Synthesizing each beat at {rate} ==")
+    audio_durations, silences, narration_path = await synth_per_beat(
+        rate, ffmpeg
+    )
+    total_audio = sum(audio_durations) + sum(silences)
     print(f"\n  Final narration: {total_audio:.1f}s  (video: {video_dur:.1f}s)")
 
-    # ── Build SRT cues aligned to the actual audio (including silences) ──
-    pads = [inter_silence] * len(durations)
-    captions_path = OUT_DIR / "captions.srt"
-    write_captions(durations, pads, captions_path)
-    print(f"  Captions       : {captions_path}")
+    # Captions intentionally skipped — they were overlapping on-screen UI
+    # in the demo (score, breakdown bars, FIX section headings). Voice
+    # alone keeps the visual clean.
 
     # ── Mux ──────────────────────────────────────────────────────────────
     output_path = Path(args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [ffmpeg, "-y", "-i", str(video_path), "-i", str(narration_path)]
-
-    if not args.no_burn:
-        sub_path = escape_for_subtitles_filter(captions_path)
-        style = (
-            "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,"
-            "OutlineColour=&H80000000,BorderStyle=3,Outline=1,"
-            "Shadow=0,Alignment=2,MarginV=40"
-        )
-        cmd += ["-vf", f"subtitles='{sub_path}':force_style='{style}'"]
-    else:
-        cmd += ["-c:v", "copy"]
-
-    cmd += [
-        "-map", "0:v:0", "-map", "1:a:0",
+    # Mux: extend the video's last frame by up to 10s if needed so the
+    # narration always plays in full. -shortest then trims to whichever
+    # ends first (usually the audio when the original video is the
+    # limiting factor, or the original video duration if narration is
+    # shorter).
+    cmd = [
+        ffmpeg, "-y",
+        "-i", str(video_path),
+        "-i", str(narration_path),
+        "-filter_complex", "[0:v]tpad=stop_mode=clone:stop_duration=10[v]",
+        "-map", "[v]", "-map", "1:a:0",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k",
         "-shortest", str(output_path),
     ]
 
-    print(f"\n== Muxing video + narration{' + burned captions' if not args.no_burn else ''} ==")
+    print("\n== Muxing video + narration (no captions) ==")
     run_ffmpeg(cmd, label="mux")
 
     print("\n========================================")
     print("DONE")
     print(f"  Final video : {output_path}")
-    print(f"  Captions    : {captions_path}")
     print(f"  Narration   : {narration_path}")
     print()
     print("Upload to Loom:")
     print("  1. https://www.loom.com/library")
     print("  2. Click Upload (top right)")
     print(f"  3. Select {output_path.name}")
-    if args.no_burn:
-        print(f"  4. Captions tab -> Upload captions.srt")
     print("========================================")
 
 
