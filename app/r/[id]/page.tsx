@@ -179,6 +179,13 @@ export default async function ReportPage({
       </div>
 
       <ReportProvider initialAnalysis={initialAnalysis}>
+        {/* HistorySync lives INSIDE the provider so it subscribes to
+            context.analysis — that way it updates the localStorage entry
+            both on SSR-ready loads AND when PendingClient lands the
+            analysis live. Only touches entries the user already created
+            via upload (sample-chip clicks don't pollute history). */}
+        <HistorySync id={data.id} initialStatus={data.status} />
+
         {data.status === "ready" && initialAnalysis ? (
           <ReportView videoUrl={videoUrl} />
         ) : data.status === "failed" ? (
@@ -187,15 +194,6 @@ export default async function ReportPage({
           <PendingClient id={data.id} videoUrl={videoUrl} />
         )}
       </ReportProvider>
-
-      {/* Update local history entry (if any) — only touches entries the
-          user created via upload. No-op when there's no matching entry. */}
-      <HistorySync
-        id={data.id}
-        status={data.status}
-        score={initialAnalysis?.score}
-        category={initialAnalysis?.comparison.inferredCategory}
-      />
 
       <Footer />
     </main>
