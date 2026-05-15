@@ -13,41 +13,113 @@
  *   4. Thumbnail rating ............... thumbnail (cover frame)
  *   5. Competitor comparison .......... comparison (cohort delta)
  *   6. Trending audio/hashtag ......... trending (curated, labeled honest)
+ *
+ * --- Schema philosophy (post-bug-fix) ---
+ *
+ * Resilience > strictness. A single Gemini overshoot on a creative field
+ * (e.g. predictedLift: 65 vs. our cap of 60) was failing the entire
+ * analysis. This schema now defends against that by:
+ *
+ *   1. Numbers — never reject. Use .transform() to clamp into the valid
+ *      range. If Gemini hallucinates a 10000% lift, we silently clip it
+ *      to 100 and accept.
+ *   2. Strings — drop tight minimum-length checks. Gemini sometimes
+ *      writes terse output; that's a prompt issue, not a data validity
+ *      issue. Empty strings still fail (min 1).
+ *   3. Arrays — accept generous upper bounds, slice to the UI's expected
+ *      shape via .transform(). No more "exactly 3 rewrites" rejection.
+ *   4. Enums — drop the constrained tone lists. Display whatever label
+ *      Gemini picks; the UI doesn't depend on specific tone values.
+ *   5. Regex — auto-fix instead of reject (e.g. hashtag missing '#' →
+ *      prepend it).
+ *
+ * Net effect: an analysis can only fail validation if Gemini returns
+ * fundamentally malformed JSON (missing required fields, wrong types).
+ * Any quality issue lands in the UI for the user to judge, not as a
+ * 500 error.
+ *
+ * The Gemini-side JSON schema (ANALYSIS_RESPONSE_SCHEMA below) carries
+ * tighter bounds to encourage Gemini to constrain itself during
+ * generation. Both layers cooperate; Zod is the last-resort safety net.
  */
 import { z } from "zod"
 
-/* ── Primitives ─────────────────────────────────────────────── */
+export const ALLOWED_MIME_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+] as const
 
-export const Timestamp = z.number().min(0).max(600) // 0 → 10min cap
-export const Score100 = z.number().min(0).max(100)
+export const MAX_BYTES = 104_857_600 // 100 MiB
 
-/* ── Sections ───────────────────────────────────────────────── */
+export const ReportStatus = z.enum([
+  "pending",
+  "analyzing",
+  "ready",
+  "failed",
+])
+export type ReportStatus = z.infer<typeof ReportStatus>
+
+/* ── Primitives (all defensively clamped) ──────────────────── */
+
+/** Seconds, clamped to a 2-hour ceiling. */
+export const Timestamp = z
+  .number()
+  .min(0)
+  .transform((n) => Math.min(7200, n))
+
+/** 0-100 score, clamped if Gemini overshoots either bound. */
+export const Score100 = z
+  .number()
+  .transform((n) => Math.max(0, Math.min(100, Math.round(n))))
+
+/** "% predicted lift" on rewrite cards. Clamp 0-100. */
+const PredictedLift = z
+  .number()
+  .int()
+  .min(0)
+  .transform((n) => Math.min(100, n))
+
+/** A short user-facing string. Just non-empty, no length floor. */
+const ShortString = z.string().min(1)
+
+/* ── /api/upload/init ─────────────────────────────────────────── */
+
+export const UploadInitRequest = z.object({
+  fileName: z.string().min(1).max(255),
+  fileSize: z.number().int().positive().max(MAX_BYTES),
+  mimeType: z.enum(ALLOWED_MIME_TYPES),
+})
+export type UploadInitRequest = z.infer<typeof UploadInitRequest>
+
+export const UploadInitResponse = z.object({
+  id: z.string().uuid(),
+  storagePath: z.string(),
+})
+export type UploadInitResponse = z.infer<typeof UploadInitResponse>
+
+/* ── Sections of the Analysis ─────────────────────────────────── */
+
+const RewriteCard = z.object({
+  /** Free-form tone label. Was an enum; relaxed so Gemini can pick
+   *  any descriptor it thinks fits — the UI just displays the string. */
+  tone: z.string().min(1),
+  text: ShortString,
+  predictedLift: PredictedLift,
+})
 
 export const HookAnalysis = z.object({
-  /** When the actual "hook" payoff lands (versus where it ideally should). */
+  /** When the actual "hook" payoff lands (vs. where it ideally should). */
   landsAt: Timestamp,
-  /** What's specifically broken about the opener. Cite a frame, sound, or word. */
-  issue: z.string().min(20),
-  /** Concrete cut instruction. "Cut 0.4s–1.4s" or "Open with the third clip." */
-  fix: z.string().min(20),
-  /** 3 alternative hook lines a creator could try, ranked by predicted lift. */
+  /** What's broken about the opener. */
+  issue: ShortString,
+  /** Concrete cut/edit instruction. */
+  fix: ShortString,
+  /** Up to 3 alternative hook lines — slice if Gemini returned more. */
   alternatives: z
-    .array(
-      z.object({
-        tone: z.enum(["Curiosity", "Contradiction", "Stat", "Pattern-break"]),
-        text: z.string().min(8),
-        // Clamp defensively rather than failing validation. Gemini's
-        // "% lift" predictions are creative guesses — occasionally
-        // overshoot. Better to accept a 75 and clamp than to fail the
-        // whole analysis because of one field.
-        predictedLift: z
-          .number()
-          .int()
-          .min(0)
-          .transform((n) => Math.min(100, n)),
-      }),
-    )
-    .length(3),
+    .array(RewriteCard)
+    .max(10)
+    .transform((arr) => arr.slice(0, 3)),
 })
 
 export const PacingAnalysis = z.object({
@@ -55,102 +127,106 @@ export const PacingAnalysis = z.object({
     .array(
       z.object({
         at: Timestamp,
-        issue: z.string().min(15),
-        fix: z.string().min(15),
+        issue: ShortString,
+        fix: ShortString,
       }),
     )
-    .max(5),
+    .max(20)
+    .transform((arr) => arr.slice(0, 5)),
   deadAir: z
     .array(
       z.object({
         start: Timestamp,
         end: Timestamp,
-        why: z.string().min(10),
+        why: ShortString,
       }),
     )
-    .max(5),
-  note: z.string().min(30),
+    .max(20)
+    .transform((arr) => arr.slice(0, 5)),
+  note: ShortString,
 })
 
 export const ThumbnailAnalysis = z.object({
   /** Timestamp of the strongest frame to use as a thumbnail. */
   bestFrameAt: Timestamp,
-  issue: z.string().min(20),
-  fix: z.string().min(20),
+  issue: ShortString,
+  fix: ShortString,
 })
 
 export const CaptionAnalysis = z.object({
   /** What we extracted from the on-screen text / overlay / spoken intro. */
   original: z.string(),
-  /** Filler words to strike through. */
-  deadWords: z.array(z.string()).max(8),
+  /** Up to 8 filler words to strike through. */
+  deadWords: z
+    .array(z.string())
+    .max(50)
+    .transform((arr) => arr.slice(0, 8)),
+  /** Up to 3 rewrites — slice if Gemini returned more. */
   rewrites: z
-    .array(
-      z.object({
-        tone: z.enum([
-          "Curiosity",
-          "Contradiction",
-          "Stat",
-          "Conversational",
-        ]),
-        text: z.string().min(8),
-        // Clamp defensively rather than failing validation. Gemini's
-        // "% lift" predictions are creative guesses — occasionally
-        // overshoot. Better to accept a 75 and clamp than to fail the
-        // whole analysis because of one field.
-        predictedLift: z
-          .number()
-          .int()
-          .min(0)
-          .transform((n) => Math.min(100, n)),
-      }),
-    )
-    .length(3),
+    .array(RewriteCard)
+    .max(10)
+    .transform((arr) => arr.slice(0, 3)),
 })
 
 export const Comparison = z.object({
-  /** Delta vs the category's median score. Positive = above, negative = below. */
-  vsCategoryMedian: z.number().int().min(-100).max(100),
-  /** What this video could score if every recommended fix were applied. */
+  /** Delta vs. category median. Clamp into the [-100, +100] range. */
+  vsCategoryMedian: z
+    .number()
+    .int()
+    .transform((n) => Math.max(-100, Math.min(100, n))),
+  /** What this video could score if every fix were applied. Always
+   *  >= the headline score (we don't enforce that — UI tolerates it). */
   ceilingScore: Score100,
-  /** What the model thinks the video's category is (so we can show it). */
-  inferredCategory: z.string(),
+  /** Inferred content vertical. */
+  inferredCategory: ShortString,
 })
 
 /**
  * Trending audio + hashtag recommendations.
- * Note: this is intentionally model-generated suggestions, NOT live trend
- * data. README documents this honestly — a real production version would
- * cross-reference TikTok Sounds / Spotify charts. For V1, the model picks
- * from its training knowledge.
+ * Honest framing: this is model-generated content, NOT live trend data.
+ * The audio.name field holds a mood/genre descriptor (e.g. "tension-
+ * building cinematic synth"), not a real track title — see prompt.ts.
  */
 export const TrendingSuggestions = z.object({
   audio: z
     .array(
       z.object({
-        name: z.string().min(3),
-        why: z.string().min(15),
+        name: ShortString,
+        why: ShortString,
       }),
     )
-    .max(3),
+    .max(10)
+    .transform((arr) => arr.slice(0, 3)),
   hashtags: z
     .array(
       z.object({
-        tag: z.string().regex(/^#/, "must start with #"),
-        why: z.string().min(10),
+        // Auto-prefix '#' if Gemini forgot it. Used to be a regex reject;
+        // that was brittle.
+        tag: z
+          .string()
+          .min(1)
+          .transform((s) =>
+            s.startsWith("#") ? s : `#${s.replace(/^\s+/, "")}`,
+          ),
+        why: ShortString,
       }),
     )
-    .max(5),
+    .max(15)
+    .transform((arr) => arr.slice(0, 5)),
 })
 
-/* ── The top-level analysis ─────────────────────────────────── */
+/* ── The top-level Analysis ───────────────────────────────────── */
 
 export const Analysis = z.object({
   /** 0-100, the headline number. */
   score: Score100,
-  /** Editorial italic quote, ~15 words. Will be displayed as the verdict. */
-  verdict: z.string().min(30).max(160),
-  /** Per-section score breakdown (must agree with the overall score). */
+  /** Editorial italic quote shown as the verdict. Truncate to 240 chars
+   *  if Gemini wrote a paragraph (rare but possible). */
+  verdict: z
+    .string()
+    .min(1)
+    .transform((s) => (s.length > 240 ? s.slice(0, 237) + "…" : s)),
+  /** Per-section score breakdown. */
   breakdown: z.object({
     hook: Score100,
     pacing: Score100,
@@ -167,11 +243,29 @@ export const Analysis = z.object({
 export type Analysis = z.infer<typeof Analysis>
 
 /**
- * JSON-schema-shaped object Gemini accepts as responseSchema.
- * Gemini's schema dialect is OpenAPI 3.0 subset — no $ref, no oneOf,
- * limited enum/type. We hand-write it to match Zod above so we don't
- * fight zod-to-json-schema's quirks.
+ * JSON-schema-shaped object Gemini accepts as `responseSchema`.
+ *
+ * This is the FIRST line of defence — bounds declared here ask Gemini to
+ * constrain itself during generation. Zod above is the safety net for
+ * when Gemini ignores its own contract.
+ *
+ * Gemini's schema dialect is an OpenAPI 3.0 subset — no $ref, no oneOf,
+ * limited enum/type. Hand-written to keep Gemini's tokenizer happy.
  */
+const TIMESTAMP_SCHEMA = { type: "number", minimum: 0, maximum: 7200 } as const
+const SCORE_SCHEMA = { type: "integer", minimum: 0, maximum: 100 } as const
+const LIFT_SCHEMA = { type: "integer", minimum: 0, maximum: 100 } as const
+
+const REWRITE_CARD_SCHEMA = {
+  type: "object",
+  required: ["tone", "text", "predictedLift"],
+  properties: {
+    tone: { type: "string" },
+    text: { type: "string" },
+    predictedLift: LIFT_SCHEMA,
+  },
+} as const
+
 export const ANALYSIS_RESPONSE_SCHEMA = {
   type: "object",
   required: [
@@ -186,39 +280,30 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
     "trending",
   ],
   properties: {
-    score: { type: "integer", minimum: 0, maximum: 100 },
-    verdict: { type: "string" },
+    score: SCORE_SCHEMA,
+    verdict: { type: "string", maxLength: 240 },
     breakdown: {
       type: "object",
       required: ["hook", "pacing", "thumbnail", "caption"],
       properties: {
-        hook: { type: "integer", minimum: 0, maximum: 100 },
-        pacing: { type: "integer", minimum: 0, maximum: 100 },
-        thumbnail: { type: "integer", minimum: 0, maximum: 100 },
-        caption: { type: "integer", minimum: 0, maximum: 100 },
+        hook: SCORE_SCHEMA,
+        pacing: SCORE_SCHEMA,
+        thumbnail: SCORE_SCHEMA,
+        caption: SCORE_SCHEMA,
       },
     },
     hook: {
       type: "object",
       required: ["landsAt", "issue", "fix", "alternatives"],
       properties: {
-        landsAt: { type: "number" },
+        landsAt: TIMESTAMP_SCHEMA,
         issue: { type: "string" },
         fix: { type: "string" },
         alternatives: {
           type: "array",
-          items: {
-            type: "object",
-            required: ["tone", "text", "predictedLift"],
-            properties: {
-              tone: {
-                type: "string",
-                enum: ["Curiosity", "Contradiction", "Stat", "Pattern-break"],
-              },
-              text: { type: "string" },
-              predictedLift: { type: "integer", minimum: 0, maximum: 100 },
-            },
-          },
+          minItems: 1,
+          maxItems: 3,
+          items: REWRITE_CARD_SCHEMA,
         },
       },
     },
@@ -228,11 +313,12 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
       properties: {
         cuts: {
           type: "array",
+          maxItems: 5,
           items: {
             type: "object",
             required: ["at", "issue", "fix"],
             properties: {
-              at: { type: "number" },
+              at: TIMESTAMP_SCHEMA,
               issue: { type: "string" },
               fix: { type: "string" },
             },
@@ -240,12 +326,13 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
         },
         deadAir: {
           type: "array",
+          maxItems: 5,
           items: {
             type: "object",
             required: ["start", "end", "why"],
             properties: {
-              start: { type: "number" },
-              end: { type: "number" },
+              start: TIMESTAMP_SCHEMA,
+              end: TIMESTAMP_SCHEMA,
               why: { type: "string" },
             },
           },
@@ -257,7 +344,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
       type: "object",
       required: ["bestFrameAt", "issue", "fix"],
       properties: {
-        bestFrameAt: { type: "number" },
+        bestFrameAt: TIMESTAMP_SCHEMA,
         issue: { type: "string" },
         fix: { type: "string" },
       },
@@ -267,26 +354,12 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
       required: ["original", "deadWords", "rewrites"],
       properties: {
         original: { type: "string" },
-        deadWords: { type: "array", items: { type: "string" } },
+        deadWords: { type: "array", maxItems: 8, items: { type: "string" } },
         rewrites: {
           type: "array",
-          items: {
-            type: "object",
-            required: ["tone", "text", "predictedLift"],
-            properties: {
-              tone: {
-                type: "string",
-                enum: [
-                  "Curiosity",
-                  "Contradiction",
-                  "Stat",
-                  "Conversational",
-                ],
-              },
-              text: { type: "string" },
-              predictedLift: { type: "integer", minimum: 0, maximum: 100 },
-            },
-          },
+          minItems: 1,
+          maxItems: 3,
+          items: REWRITE_CARD_SCHEMA,
         },
       },
     },
@@ -294,8 +367,8 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
       type: "object",
       required: ["vsCategoryMedian", "ceilingScore", "inferredCategory"],
       properties: {
-        vsCategoryMedian: { type: "integer" },
-        ceilingScore: { type: "integer", minimum: 0, maximum: 100 },
+        vsCategoryMedian: { type: "integer", minimum: -100, maximum: 100 },
+        ceilingScore: SCORE_SCHEMA,
         inferredCategory: { type: "string" },
       },
     },
@@ -305,6 +378,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
       properties: {
         audio: {
           type: "array",
+          maxItems: 3,
           items: {
             type: "object",
             required: ["name", "why"],
@@ -316,6 +390,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
         },
         hashtags: {
           type: "array",
+          maxItems: 5,
           items: {
             type: "object",
             required: ["tag", "why"],
