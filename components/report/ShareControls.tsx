@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { btnStyle } from "./atoms"
 
@@ -39,13 +39,19 @@ export function ShareControls({
     }
   }, [shareUrl])
 
-  const handleTweet = useCallback(() => {
-    // Short verdict so the tweet text + URL fits comfortably under 280 chars
+  // Build the X / Twitter intent URL once. Using a real <a> element below
+  // (instead of window.open inside an onClick) means popup blockers and
+  // missing-user-gesture issues can't suppress the click — the browser
+  // treats it as a normal link navigation.
+  const tweetHref = useMemo(() => {
     const trimmed =
       verdict.length > 110 ? verdict.slice(0, 107).trimEnd() + "…" : verdict
     const tweetText = `Got a ${score}/100 on METRIC.fyi — "${trimmed}"`
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}&url=${encodeURIComponent(shareUrl)}`
-    window.open(url, "_blank", "noopener,noreferrer")
+    return (
+      `https://x.com/intent/tweet` +
+      `?text=${encodeURIComponent(tweetText)}` +
+      `&url=${encodeURIComponent(shareUrl)}`
+    )
   }, [shareUrl, score, verdict])
 
   return (
@@ -57,13 +63,15 @@ export function ShareControls({
       >
         ↗ {copied ? "COPIED" : "COPY LINK"}
       </button>
-      <button
-        onClick={handleTweet}
-        style={btnStyle("primary", "small")}
-        aria-label="Share report on Twitter"
+      <a
+        href={tweetHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ ...btnStyle("primary", "small"), textDecoration: "none" }}
+        aria-label="Share report on X"
       >
         ↗ TWEET
-      </button>
+      </a>
     </div>
   )
 }
