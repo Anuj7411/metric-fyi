@@ -50,7 +50,7 @@ The whole thing is **no-signup**: anyone with the URL can reach a real analyzed 
 | Virality score 0–100 + breakdown | `components/report/ReportView.tsx` Hero + breakdown bars |
 | Hook analysis (first 3 s) | FixHook section + `Analysis.hook.{landsAt, issue, fix, alternatives}` |
 | Caption optimization | FixCaption section — dead-words struck through, 3 ranked rewrites, picked one swaps in when the What If toggle is on |
-| Competitor / cohort comparison | Hero "vs MEDIAN / vs CATEGORY / CEILING" row (`derive.ts → deriveVsMedian`) |
+| Competitor / cohort comparison | Hero "vs PLATFORM / vs CATEGORY / CEILING" row — two independent deltas the model reasons about per video, plus a model-grounded `optimalPostTime` with a `why` |
 | Trending audio + hashtag recs | Trending section — model-suggested mood/genre (deliberately not specific track names, see scope cuts) |
 
 Plus a **thumbnail rating** section (FixThumbnail) showing the current cover frame versus the AI's recommended frame, both extracted client-side from the actual video.
@@ -220,7 +220,7 @@ Each of these was a real choice, not an oversight. README being honest about the
 - **Trending audio = mood/genre descriptors, not real track names.** Model knowledge of specific TikTok sounds is stale and a hallucination risk. The prompt asks for `"tension-building cinematic synth with low-end drum hits"` instead of `"Christmas Kids - Roar"` — the creator picks a matching real track in TikTok's sound library. Honest framing rendered in the section header: *MODEL-SUGGESTED MOOD/GENRE, NOT A LIVE TREND FEED.*
 - **Frame thumbnails = client-side canvas extraction, not server pre-processing.** No ffmpeg, no Storage write of thumbnails. Works from the browser cache, runs after page load. Fails gracefully on slow CORS to gradient placeholders.
 - **20 MB inline video cap on analysis.** Files API path is the natural upgrade for larger files; right now uploads >20 MB are accepted by Storage but the analyze route returns a clear error.
-- **Optimal post time = category → window mapping in `derive.ts`.** Per-creator analytics would beat this. Honestly labeled in the UI as a "model-suggested" steer.
+- **Optimal post time = model-grounded recommendation, not real analytics.** Gemini returns `{day, time, why}` per video based on the inferred category and content; the UI labels it as a "model-suggested" steer. Per-creator analytics from a real TikTok/Reels account would beat this.
 - **Rate limit is in-memory.** Per-Vercel-lambda accounting — fine for contest scale, not for production traffic.
 - **No real-time streaming reveal from the LLM.** Sync Gemini call + client-side staggered fade-in. Same visual effect, honest implementation. Edge-runtime SSE harness is in `scripts/test-stream.ts` for the eventual upgrade.
 
