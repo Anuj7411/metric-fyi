@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "logs:sync": "bash scripts/sync-logs.sh",
+    "test:rls": "tsx scripts/test-rls.ts",
     "db:link": "supabase link --project-ref kjqwjilhxzeqkdydtsoj",
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --project-id kjqwjilhxzeqkdydtsoj > lib/db/types.ts",
