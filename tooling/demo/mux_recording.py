@@ -107,7 +107,8 @@ BEATS: list[tuple[str, float]] = [
      "your video's content. No hallucinated track names.",
      10.0),
     # 2:21–2:27 — History close (6s)
-    ("History pins reports here. Built in nine days with Claude.",
+    ("And History again — every analyzed report pinned to this device, "
+     "no signup required.",
      6.0),
 ]
 
