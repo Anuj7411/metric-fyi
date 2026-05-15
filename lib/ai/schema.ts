@@ -36,7 +36,15 @@ export const HookAnalysis = z.object({
       z.object({
         tone: z.enum(["Curiosity", "Contradiction", "Stat", "Pattern-break"]),
         text: z.string().min(8),
-        predictedLift: z.number().int().min(0).max(60),
+        // Clamp defensively rather than failing validation. Gemini's
+        // "% lift" predictions are creative guesses — occasionally
+        // overshoot. Better to accept a 75 and clamp than to fail the
+        // whole analysis because of one field.
+        predictedLift: z
+          .number()
+          .int()
+          .min(0)
+          .transform((n) => Math.min(100, n)),
       }),
     )
     .length(3),
@@ -86,7 +94,15 @@ export const CaptionAnalysis = z.object({
           "Conversational",
         ]),
         text: z.string().min(8),
-        predictedLift: z.number().int().min(0).max(60),
+        // Clamp defensively rather than failing validation. Gemini's
+        // "% lift" predictions are creative guesses — occasionally
+        // overshoot. Better to accept a 75 and clamp than to fail the
+        // whole analysis because of one field.
+        predictedLift: z
+          .number()
+          .int()
+          .min(0)
+          .transform((n) => Math.min(100, n)),
       }),
     )
     .length(3),
@@ -200,7 +216,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
                 enum: ["Curiosity", "Contradiction", "Stat", "Pattern-break"],
               },
               text: { type: "string" },
-              predictedLift: { type: "integer" },
+              predictedLift: { type: "integer", minimum: 0, maximum: 100 },
             },
           },
         },
@@ -268,7 +284,7 @@ export const ANALYSIS_RESPONSE_SCHEMA = {
                 ],
               },
               text: { type: "string" },
-              predictedLift: { type: "integer" },
+              predictedLift: { type: "integer", minimum: 0, maximum: 100 },
             },
           },
         },
