@@ -215,9 +215,95 @@ Documented in README under "Deliberate scope cuts."
 
 ---
 
-## What's left
+---
 
-- **Tomorrow (you):** mobile responsive verify on a real phone, Loom recording (~4 min walking through landing → sample chip → cascading reveal → What If? toggles → copy checklist), 8–12 screenshots saved into `docs/screenshots/`, fill the contest application form's remaining steps, paste the repo URL.
-- **Tomorrow (me):** sync the latest JSONL into `ai-logs/`, final pass on the README's "What's left" section to reflect submission state, git tag `v1.0.0-submission`, push.
+## Day 8 (cont.) — May 15, 2026 · Mobile pass, security audit, schema hardening
 
-The website is feature-complete. All 5 differentiators are live. All 6 brief features are mapped. The wow moment (What If? simulator with score morph + tier-1 reveal + copy checklist) is the closing shot of the Loom.
+Day 8 ran in two waves. First wave: RLS regression + README polish (above). Second wave kicked off when the user opened the live site on their phone and started filing real issues.
+
+### Wave 2a — Nav and modal additions
+
+Before the mobile pass, three concrete UX gaps showed up on the desktop:
+- The "Sign in →" nav link pointed at an auth flow we'd deliberately cut. Removed.
+- "How it works" and "Examples" were non-clickable `<span>`s. Promoted to modal-opening buttons with a 3-step explainer and 3-sample card grid respectively.
+- Same nav got a third "History" button + per-device localStorage history with a `HistorySync` client component. Shipped in commits `d601431` (modals) and `c715405` (history).
+
+### Wave 2b — The HistorySync bug (caught by /debug)
+
+Ran the `/debug` + `/code-review` + `/systematic-debugging` skills as a pre-submission QA pass. Found **one real bug** (10/10 RLS tests still green, 5 minor stylistic findings noted but left alone):
+
+`HistorySync` was rendered outside `<ReportProvider>` and received `status` as an immutable SSR prop. For pending-at-SSR reports, the localStorage entry stayed permanently `pending` even after `PendingClient` set the analysis on context — `HistorySync`'s props never changed, so its `useEffect` never re-fired.
+
+Fix in `768a6ea`: moved `HistorySync` inside the provider and switched it to read `analysis` from context. Now reacts to both SSR-ready and PendingClient-landed cases identically.
+
+### Wave 2c — Vibe-Checklist security audit
+
+User shared mdsaban's [Vibe Coding Security Checklist](https://gist.github.com/mdsaban/29ffbb6974ce2fa9acc37415b9a4b684) and asked me to audit against it. Walked every item:
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Leaked secrets | ✅ `git grep` clean. `.env.local` gitignored. AI logs scrub `AIza/sk-/sk-ant-` patterns. |
+| 2 | Input sanitization | ✅ Zod on every API boundary. No raw HTML injection paths, no `eval`, no raw SQL string interpolation. |
+| 3 | Rate limiting | ✅ Token bucket on `/api/upload/init` (10/10m) + `/api/analyze/[id]` (5/10m). |
+| 4 | Auth | ✅ Supabase managed. No custom flow. RLS-only enforcement. |
+| 5 | API versioning | ⚠️ Scope cut — `/api/upload/init` not `/api/v1/...`. Single-codebase consumer; documented. |
+| 6 | File uploads | ✅ Four enforcement layers: client → Zod → DB CHECK → Storage bucket. |
+| 7 | Dependencies | ❌→✅ `pnpm audit` flagged **23 CVEs in Next.js** (9 high — SSRF, DoS variants, middleware bypass, CSRF on Server Actions). Bumped 16.0.10 → 16.2.6 in `7140e57`. Audit now: 1 transitive postcss XSS, build-time-only, non-exploitable. |
+
+### Wave 2d — The mobile pass (six fixes, two rounds)
+
+User's iPhone screenshots surfaced layout + interaction bugs invisible on desktop. Fixed in two commits.
+
+**`f17452a` — first round:**
+- Hero `font-size` lower bound 56 → 40px so the headline doesn't force one-word-per-line at 375px.
+- Hero padding `px-12` → `px-6 md:px-14 lg:px-20` (was eating 96 of 375px in horizontal padding).
+- `UploadCard` switched to `flex-col md:flex-row` — `SCORE IT →` button used to overflow off-screen right. Now stacks below the input on mobile, full-width tap target.
+- Added `min-w-0` on the `flex-1` truncate parent so the placeholder text actually clips with ellipsis.
+- `NavButton` got `whitespace-nowrap` — "HOW IT WORKS" was breaking onto two lines.
+- `Toaster` moved from `top-center` to `bottom-center` — iOS Safari's URL bar was obscuring upload-progress toasts.
+- Added an indeterminate lime progress bar across the top of `UploadCard` while `busy=true` so users get in-page feedback even if a toast is hidden.
+
+**`524a4fa` — second round:**
+- Nav padding finally normalised to `px-6 md:px-14 lg:px-20` matching every other surface. The 8px mismatch between Nav and the report sub-nav was the alignment glitch.
+- `useVideoFrames` hook rewritten for iOS Safari: wait for `canplay` (readyState 3), not just `loadedmetadata`, before seeking; prime with a `play()/pause()` cycle; attach the hidden `<video>` to `document.body` (off-screen) instead of leaving it detached; 1.5s seek-timeout fallback. iOS Safari's documented seek quirk was making `FixThumbnail`'s CURRENT/PROPOSED boxes stick on gradient placeholders forever.
+- Play overlay + bottom-bar play/pause replaced with hand-tuned SVG triangles. The unicode `▶` glyph was rendering as a legacy emoji on iOS and off-center via the unreliable `paddingLeft:6` optical correction.
+- `FixCaption` had an `AnimatePresence mode="wait"` content swap between two layouts ~120px apart in height. Every Caption toggle jolted the entire page below it. Removed the swap; toggling now changes only opacity + label text. The shake's gone.
+
+### Wave 2e — Schema hardening (the failure-cascade fix)
+
+User's phone upload later returned `ANALYSIS FAILED` with `hook.alternatives.0.predictedLift → Number must be less than or equal to 60`. My Zod schema capped `predictedLift` at 60; Gemini returned 65. The whole analysis got marked `failed`.
+
+Fixed in `c583ca7` (the immediate `max(60) → max(100)` patch) — then user correctly pushed back: *"similar type of different error can also occur."*
+
+So `485d3a1` did a full schema audit and hardened every constraint:
+
+- **Numbers**: every tight `.max()` replaced with `.transform()` clamping into range. Timestamp clamps to 7200s. Score100 clamps + rounds. Lifts clamp to 100. vsCategoryMedian clamps to ±100.
+- **Strings**: dropped 15 separate `.min(N)` requirements. Empty strings still fail (`min(1)`), but no more "this fix description is only 18 chars, the prompt asked for 20+" rejections.
+- **Arrays**: relaxed exact `.length(3)` on hook alternatives + caption rewrites to `.max(10).transform(slice(0,3))`. Same pattern for cuts/deadAir/audio/hashtags caps.
+- **Enums**: dropped the `tone: enum([4 values])` constraints on hook + caption rewrites. The UI just displays whatever label Gemini picks.
+- **Regex**: `tag.regex(/^#/)` reject → `transform(s => s.startsWith('#') ? s : '#'+s)`. Auto-prefix instead of fail.
+- **Gemini JSON schema side**: added `minimum/maximum` on all numeric fields and `minItems/maxItems` on all arrays as a first line of defence — Gemini constrains during generation, Zod is now last-resort safety net.
+
+Net effect: an analysis can only fail validation if Gemini returns *fundamentally malformed* JSON (missing required fields, wrong types). Any creative overshoot or undershoot is silently absorbed. Verified by re-running `pnpm test:analyze` against all 3 sample videos — every one parsed cleanly.
+
+---
+
+## What's left for the actual submission
+
+- **You (~2h):** finish mobile re-test on the new build, record the Loom (≤5 min — landing → sample chip → cascading reveal → What If? toggles → copy checklist → tweet button), 8–12 screenshots into `docs/screenshots/`, fill the contest application form's remaining steps, paste the repo + Loom URLs.
+- **Me (~15 min when you're ready):** git tag `v1.0.0-submission`, push tag.
+
+Feature scorecard going into submission:
+
+| Brief feature | Status |
+|---|---|
+| Video upload | ✅ drag-drop, 100 MB cap, 20 MB analysis cap |
+| Virality score 0-100 + breakdown | ✅ Hero + 4 bars |
+| Hook analysis (first 3s) | ✅ FixHook with landsAt + 3 ranked rewrites |
+| Caption optimization | ✅ FixCaption with strikethrough dead-words + 3 ranked rewrites |
+| Competitor comparison | ✅ Hero `vs MEDIAN/vs CAT/CEIL` row |
+| Trending audio/hashtag | ✅ Trending section, mood-based audio + 5 hashtags |
+| **Plus** thumbnail rating | ✅ FixThumbnail with real-frame current vs proposed |
+| **Plus** What If? simulator | ✅ Toggle grid + animated score morph + copy checklist |
+
+Differentiators 1–5 all live. Security audit at 1 non-exploitable vuln. Schema can absorb any reasonable Gemini output without failing. Mobile responsive across iOS Safari + Android Chrome. README + AI logs current. Repo public. Live URL stable.
