@@ -26,6 +26,7 @@ Output (all under tooling/demo/output/):
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import re
 import subprocess
@@ -209,14 +210,15 @@ async def synthesize_segment(text: str, out_path: Path):
 
 # ── Pipeline ───────────────────────────────────────────────────────────────
 
-async def main():
+async def main(audio_only: bool = False):
     OUT_DIR.mkdir(exist_ok=True)
     AUDIO_DIR.mkdir(exist_ok=True)
-    # Wipe prior video dir so we don't pick up an old webm.
-    if VIDEO_DIR.exists():
-        for f in VIDEO_DIR.glob("*"):
-            f.unlink()
-    VIDEO_DIR.mkdir(exist_ok=True)
+    if not audio_only:
+        # Wipe prior video dir so we don't pick up an old webm.
+        if VIDEO_DIR.exists():
+            for f in VIDEO_DIR.glob("*"):
+                f.unlink()
+        VIDEO_DIR.mkdir(exist_ok=True)
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -265,6 +267,23 @@ async def main():
         "\n".join(srt_chunks) + "\n", encoding="utf-8"
     )
     print(f"  -> {OUT_DIR/'captions.srt'}")
+
+    if audio_only:
+        print("\n========================================")
+        print("AUDIO-ONLY MODE — skipping browser recording")
+        print(f"  Narration : {narration_path}")
+        print(f"  Captions  : {OUT_DIR/'captions.srt'}")
+        print()
+        print("To record manually with Loom:")
+        print("  1. Open Loom, start Screen-only recording WITH system audio ON")
+        print("  2. Press play on narration.mp3 AND start recording at the")
+        print("     same instant (so the SRT timing aligns).")
+        print("  3. Click through https://metric-fyi.vercel.app while the")
+        print("     AI voice narrates.")
+        print("  4. After upload, paste captions.srt into Loom's caption")
+        print("     editor — it will be perfectly synced.")
+        print("========================================")
+        return
 
     # ── 4. Drive Chromium and record viewport ────────────────────────────
     print("\n== Recording browser ==")
@@ -335,4 +354,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument(
+        "--audio-only",
+        action="store_true",
+        help="Skip browser automation. Just produce narration.mp3 + captions.srt "
+             "so you can record the screen manually with Loom.",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(audio_only=args.audio_only))
