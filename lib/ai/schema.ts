@@ -50,7 +50,10 @@ export const ALLOWED_MIME_TYPES = [
   "video/webm",
 ] as const
 
-export const MAX_BYTES = 104_857_600 // 100 MiB
+// Matches the Gemini inline-analysis ceiling. Kept in sync with
+// lib/schemas/report.ts. The DB CHECK on reports.file_size still
+// allows up to 100 MiB for forward-compat with the Files API path.
+export const MAX_BYTES = 20 * 1024 * 1024 // 20 MiB
 
 export const ReportStatus = z.enum([
   "pending",

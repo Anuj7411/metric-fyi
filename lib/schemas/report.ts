@@ -11,7 +11,11 @@ export const ALLOWED_MIME_TYPES = [
   "video/webm",
 ] as const
 
-export const MAX_BYTES = 104_857_600 // 100 MiB
+// User-facing analysis cap. The DB CHECK constraint on reports.file_size
+// still permits up to 100 MiB for forward-compat with the Gemini Files
+// API path (Day 9+1); this 20 MB cap is what the inline route + Zod
+// validate at upload time, matching what Gemini can analyze in one shot.
+export const MAX_BYTES = 20 * 1024 * 1024 // 20 MiB
 
 export const ReportStatus = z.enum([
   "pending",

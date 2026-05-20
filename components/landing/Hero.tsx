@@ -201,7 +201,8 @@ export function Hero() {
               }}
             >
               <span>↳ drop anywhere on the page</span>
-              <span>↳ no signup · no email · 22-second analysis</span>
+              <span>↳ mp4 / mov / webm · up to 20 MB</span>
+              <span>↳ no signup · 22-second analysis</span>
             </div>
             <SampleVideoPicker />
           </div>

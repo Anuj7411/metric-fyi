@@ -5,7 +5,11 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 const ACCEPT = ".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm"
-const MAX_BYTES = 100 * 1024 * 1024 // 100MB — enforced server-side too on Day 3
+// Aligned with the Gemini inline-analysis ceiling (~20 MB). The DB
+// CHECK constraint still allows up to 100 MiB for forward-compat with
+// the Files API path; the user-facing UI just won't let you submit
+// something we'd then fail to analyze.
+const MAX_BYTES = 20 * 1024 * 1024
 
 type Props = {
   /** Filename currently picked (from drop, click, or sample). Empty = nothing picked yet. */
@@ -71,8 +75,11 @@ export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props
       return
     }
     if (file.size > MAX_BYTES) {
-      toast.error("File is over 100MB.", {
-        description: "We trim the limit so analysis stays fast.",
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1)
+      toast.error(`Video is ${sizeMB} MB — over the 20 MB limit.`, {
+        description:
+          "Inline analysis caps at 20 MB. Trim the clip in CapCut, lower the export bitrate, or pick a shorter video.",
+        duration: 6000,
       })
       return
     }
