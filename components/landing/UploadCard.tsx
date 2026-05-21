@@ -18,6 +18,10 @@ type Props = {
   onScore: () => void
   /** Disables the score button while an upload is in flight. */
   busy?: boolean
+  /** 0–100 during upload, null when idle or pre-progress. Drives the
+   *  real-percentage progress bar; falls back to indeterminate shimmer
+   *  while busy && progress === null (e.g. before the first chunk lands). */
+  progress?: number | null
 }
 
 /**
@@ -30,7 +34,13 @@ type Props = {
  * Mobile layout: input row + button stack vertically (flex-col), button
  * goes full-width. Desktop: horizontal flex row.
  */
-export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props) {
+export function UploadCard({
+  pickedLabel,
+  onFile,
+  onScore,
+  busy = false,
+  progress = null,
+}: Props) {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -101,29 +111,49 @@ export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props
       }}
       onClick={() => !canScore && fileInputRef.current?.click()}
     >
-      {/* Indeterminate progress bar shown during upload — visible feedback
-          on the input itself, not just a top-of-screen toast that iOS can
-          obscure behind the URL chrome. */}
+      {/* Progress bar shown during upload — visible feedback on the
+          input itself, not just a top-of-screen toast that iOS can
+          obscure behind the URL chrome.
+          - Real percentage when `progress` is known (driven by XHR
+            upload.onprogress events in Hero).
+          - Indeterminate shimmer when busy && progress === null (the
+            tiny window before the first byte hits the wire). */}
       {busy && (
         <div
           aria-hidden
-          className="absolute left-0 right-0 top-0 h-0.5 overflow-hidden"
+          className="absolute left-0 right-0 top-0 h-[3px] overflow-hidden"
           style={{ background: "rgba(198,255,61,0.15)" }}
         >
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              bottom: 0,
-              width: "40%",
-              background: "var(--color-signal)",
-              animation: "uploadProgress 1.4s ease-in-out infinite",
-            }}
-          />
-          <style>{`@keyframes uploadProgress {
-            0%   { left: -40%; }
-            100% { left: 100%; }
-          }`}</style>
+          {typeof progress === "number" ? (
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: 0,
+                width: `${Math.max(2, Math.min(100, progress))}%`,
+                background: "var(--color-signal)",
+                transition: "width 220ms cubic-bezier(.2,.8,.2,1)",
+              }}
+            />
+          ) : (
+            <>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  width: "40%",
+                  background: "var(--color-signal)",
+                  animation: "uploadProgress 1.4s ease-in-out infinite",
+                }}
+              />
+              <style>{`@keyframes uploadProgress {
+                0%   { left: -40%; }
+                100% { left: 100%; }
+              }`}</style>
+            </>
+          )}
         </div>
       )}
 
@@ -151,7 +181,9 @@ export function UploadCard({ pickedLabel, onFile, onScore, busy = false }: Props
             {dragOver
               ? "drop to upload →"
               : busy
-                ? `uploading ${pickedLabel}…`
+                ? typeof progress === "number"
+                  ? `uploading ${pickedLabel} · ${progress}%`
+                  : `uploading ${pickedLabel}…`
                 : canScore
                   ? pickedLabel
                   : "drop a video — or click to pick"}

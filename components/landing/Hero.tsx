@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { UploadCard } from "./UploadCard"
 import { SampleVideoPicker } from "./SampleVideoPicker"
 import { createClient } from "@/lib/supabase/client"
+import { uploadVideoWithProgress } from "@/lib/upload"
 import { writeHistoryEntry } from "@/lib/history"
 import { dur, ease, fadeUp, staggerParent } from "@/lib/motion"
 
@@ -25,6 +26,9 @@ export function Hero() {
   const router = useRouter()
   const [picked, setPicked] = useState<Picked>(null)
   const [busy, setBusy] = useState(false)
+  /** 0–100 during upload, null when idle. Drives the progress bar in
+   *  UploadCard so the user sees real movement on slow mobile networks. */
+  const [progress, setProgress] = useState<number | null>(null)
 
   function handleFile(file: File) {
     setPicked({ kind: "file", file, label: file.name })
@@ -56,7 +60,7 @@ export function Hero() {
         } else if (initRes.status === 400) {
           toast.error("That file isn't supported.", {
             id: toastId,
-            description: "Use mp4, mov, or webm under 100 MB.",
+            description: "Use mp4, mov, or webm under 20 MB.",
           })
         } else {
           toast.error("Couldn't start the upload.", {
@@ -72,19 +76,28 @@ export function Hero() {
         storagePath: string
       }
 
-      // 2. Upload bytes directly to Supabase Storage (bypasses Vercel body limit)
-      const supabase = createClient()
-      const { error: upErr } = await supabase.storage
-        .from("videos")
-        .upload(storagePath, file, {
-          contentType: file.type,
-          upsert: false,
-        })
+      // 2. Upload bytes directly to Supabase Storage via XHR (gives us
+      //    real progress events + a controllable timeout, unlike the
+      //    supabase-js fetch path). Bypasses Vercel's 4.5 MB body cap
+      //    by going direct from browser to Storage.
+      const uploadResult = await uploadVideoWithProgress({
+        file,
+        storagePath,
+        onProgress: (loaded, total) => {
+          const pct = Math.round((loaded / total) * 100)
+          setProgress(pct)
+          toast.loading(
+            `Uploading ${file.name} · ${pct}%`,
+            { id: toastId },
+          )
+        },
+      })
 
-      if (upErr) {
-        toast.error("Upload failed mid-flight.", {
+      if (!uploadResult.ok) {
+        toast.error("Upload failed.", {
           id: toastId,
-          description: upErr.message,
+          description: uploadResult.error,
+          duration: 6000,
         })
         return
       }
@@ -109,6 +122,7 @@ export function Hero() {
       })
     } finally {
       setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -187,6 +201,7 @@ export function Hero() {
             onFile={handleFile}
             onScore={handleScore}
             busy={busy}
+            progress={progress}
           />
 
           <div
