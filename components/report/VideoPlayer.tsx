@@ -405,15 +405,60 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
             })}
           </div>
 
-          {/* Scrubber with markers + playhead */}
+          {/* Scrubber with markers + playhead.
+              Drag-or-click anywhere on the bar to seek. Pointer events
+              uniformly handle mouse + touch (no separate touchstart wiring).
+              Marker buttons stopPropagation so they keep their precise
+              marker-time seek instead of bubbling up to the position-based
+              seek of this parent. */}
           <div
-            className="relative mt-3"
+            className="relative mt-3 cursor-pointer select-none touch-none"
             style={{ height: 36 }}
             role="slider"
-            aria-label="Video scrubber with annotations"
+            tabIndex={0}
+            aria-label="Video scrubber — click or drag to seek"
             aria-valuemin={0}
             aria-valuemax={dur}
             aria-valuenow={currentTime}
+            onPointerDown={(e) => {
+              if (!dur) return
+              e.currentTarget.setPointerCapture(e.pointerId)
+              const rect = e.currentTarget.getBoundingClientRect()
+              const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+              seekTo((x / rect.width) * dur)
+            }}
+            onPointerMove={(e) => {
+              if (!dur) return
+              // Only seek while a pointer is actively captured (i.e.,
+              // the user is dragging after pressing down).
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+              seekTo((x / rect.width) * dur)
+            }}
+            onPointerUp={(e) => {
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId)
+              } catch {
+                // already released
+              }
+            }}
+            onKeyDown={(e) => {
+              if (!dur) return
+              if (e.key === "ArrowLeft") {
+                e.preventDefault()
+                seekTo(Math.max(0, currentTime - 2))
+              } else if (e.key === "ArrowRight") {
+                e.preventDefault()
+                seekTo(Math.min(dur, currentTime + 2))
+              } else if (e.key === "Home") {
+                e.preventDefault()
+                seekTo(0)
+              } else if (e.key === "End") {
+                e.preventDefault()
+                seekTo(Math.max(0, dur - 0.5))
+              }
+            }}
           >
             <div
               aria-hidden
@@ -443,7 +488,15 @@ export function VideoSection({ videoUrl }: { videoUrl: string }) {
               return (
                 <button
                   key={`scrub-${i}`}
-                  onClick={() => seekTo(m.t)}
+                  // Stop pointer propagation so clicking precisely on a
+                  // marker pin lands at the marker's exact timestamp,
+                  // instead of the parent's "wherever you tapped on the
+                  // bar" seek calculation.
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    seekTo(m.t)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                   title={`${m.t.toFixed(1)}s · ${m.label}`}
                   className="absolute cursor-pointer"
                   style={{

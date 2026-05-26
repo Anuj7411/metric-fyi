@@ -65,38 +65,83 @@ export function deriveMarkers(a: Analysis): Marker[] {
  * (gradient blocks with a timestamp + label). README documents this honestly.
  */
 export function deriveFrames(a: Analysis, durationSeconds: number): Frame[] {
+  if (durationSeconds <= 0) return []
+
   const markers = deriveMarkers(a)
-  const fromMarkers: Frame[] = markers.map((m) => ({
+  const markerFrames: Frame[] = markers.map((m) => ({
     t: m.t,
     label: m.label,
     hot: m.hot,
     good: m.good,
   }))
 
-  // Ensure we always show a TITLE frame at 0 and an end frame near duration.
-  const frames: Frame[] = [
-    { t: 0, label: "OPEN" },
-    ...fromMarkers,
+  // Always pin the two endpoints so the strip visibly covers the full
+  // duration. Without these, a video whose markers cluster in the first
+  // 25 seconds shows a strip that looks like "we only analyzed the
+  // beginning" — which was the real complaint.
+  const endpoints: Frame[] = [
+    { t: 0.05, label: "OPEN" },
+    { t: Math.max(0.05, durationSeconds - 0.5), label: "CTA" },
   ]
 
-  // Pad to at least 6 frames with evenly-spaced "FRAME"s if sparse.
-  const TARGET = 7
-  if (frames.length < TARGET && durationSeconds > 0) {
-    const step = durationSeconds / (TARGET - 1)
-    for (let i = 1; i < TARGET - 1; i++) {
-      const t = step * i
-      // Skip if there's already a frame within 1.5s of this t
-      if (frames.some((f) => Math.abs(f.t - t) < 1.5)) continue
-      frames.push({ t, label: "FRAME" })
+  // Evenly-spaced filler frames across the inner 80% of the runtime.
+  // Guarantees coverage even when every Gemini marker is clustered in
+  // the first quarter of a long video. Fillers get OUT-COMPETED by
+  // markers in the dedupe step below — so on short / dense-marker
+  // videos these mostly disappear.
+  const FILLERS = 4
+  const innerStart = durationSeconds * 0.1
+  const innerEnd = durationSeconds * 0.9
+  const innerSpan = Math.max(0, innerEnd - innerStart)
+  const fillers: Frame[] = []
+  if (FILLERS > 1 && innerSpan > 0) {
+    for (let i = 0; i < FILLERS; i++) {
+      const t = innerStart + (innerSpan / (FILLERS - 1)) * i
+      fillers.push({ t, label: "FRAME" })
     }
   }
 
-  // Final end-of-clip placeholder
-  if (durationSeconds > 2 && !frames.some((f) => Math.abs(f.t - durationSeconds) < 2)) {
-    frames.push({ t: Math.max(0, durationSeconds - 1), label: "CTA" })
+  // Merge → sort → dedupe within 2s, with markers preferred over fillers.
+  const isFiller = (label: string) =>
+    label === "FRAME" || label === "OPEN" || label === "CTA"
+
+  const sorted = [...endpoints, ...markerFrames, ...fillers].sort(
+    (x, y) => x.t - y.t,
+  )
+
+  const merged: Frame[] = []
+  for (const candidate of sorted) {
+    const existingIdx = merged.findIndex(
+      (r) => Math.abs(r.t - candidate.t) < 2,
+    )
+    if (existingIdx === -1) {
+      merged.push(candidate)
+      continue
+    }
+    const existing = merged[existingIdx]
+    // Promote: replace a filler with a marker when they collide.
+    if (isFiller(existing.label) && !isFiller(candidate.label)) {
+      merged[existingIdx] = candidate
+    }
+    // else: keep existing (marker beats marker by first-seen, marker
+    //       beats filler always, filler ignored once a slot is taken)
   }
 
-  return frames.sort((x, y) => x.t - y.t).slice(0, 8)
+  // Cap at 8 frames. Sample evenly so the result always covers the full
+  // duration — NOT slice(0,8), which used to lop the end-of-video frame
+  // off when markers were dense early on. Always keeps the first and last
+  // frames so the strip visibly spans 0 → duration.
+  const MAX = 8
+  if (merged.length <= MAX) return merged
+
+  const out: Frame[] = [merged[0]]
+  const innerCount = MAX - 2
+  for (let i = 1; i <= innerCount; i++) {
+    const idx = Math.round((merged.length - 1) * (i / (innerCount + 1)))
+    if (out[out.length - 1] !== merged[idx]) out.push(merged[idx])
+  }
+  out.push(merged[merged.length - 1])
+  return out
 }
 
 /**
