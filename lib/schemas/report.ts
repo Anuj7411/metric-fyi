@@ -31,6 +31,11 @@ export const UploadInitRequest = z.object({
   fileName: z.string().min(1).max(255),
   fileSize: z.number().int().positive().max(MAX_BYTES),
   mimeType: z.enum(ALLOWED_MIME_TYPES),
+  /** Optional user-supplied framing for the video. Prepended to the
+   *  Gemini system prompt so the model knows what the subject is meant
+   *  to be — solves screen-recording-of-other-app misclassification.
+   *  500 char cap to keep the prompt token budget sane. */
+  context: z.string().trim().max(500).optional(),
 })
 export type UploadInitRequest = z.infer<typeof UploadInitRequest>
 

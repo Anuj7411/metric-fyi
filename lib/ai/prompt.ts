@@ -125,3 +125,56 @@ VERDICT:
   • "Tier-1 hook, B-roll pacing, A+ caption. Ship it twice — once now and once next Tuesday."
 
 Begin.`
+
+/**
+ * Optional per-video framing the user supplied at upload time. Combined
+ * into the analyze call alongside USER_INSTRUCTION so Gemini knows what
+ * the video is *meant* to be about — solves the screen-recording-of-
+ * other-app failure mode where the model would otherwise inherit the
+ * embedded content's identity as the subject.
+ *
+ * Returns an additional text block to slot into `contents[0].parts`
+ * BEFORE the main USER_INSTRUCTION. Empty/missing context returns null
+ * so the prompt stays unchanged in the common case.
+ */
+export function buildContextPrompt(userContext?: string | null): string | null {
+  // Always-on meta-content rule, regardless of whether the user typed
+  // anything. Catches the most common failure: a Loom / screen recording
+  // of someone using App A to look at content B, where Gemini sees B's
+  // pixels and concludes B is the subject.
+  const metaRule = `BEFORE ANY ANALYSIS — identify what the video IS:
+
+If the MAJORITY of frames show one of:
+  - browser chrome / address bars / tabs
+  - operating-system windows or menus
+  - mouse cursor moving / clicking through UI
+  - an application's interface being navigated
+…then this is a SCREEN RECORDING / PRODUCT DEMO. The subject is the application
+being demonstrated, not whatever content is visible inside that application.
+Set inferredCategory accordingly ("Product Demo", "Software Tutorial",
+"App Walkthrough", etc.). The hook is the demo's opening pitch, not whatever
+the user happens to be clicking on. The caption is the creator's framing of
+the demo, not text scraped from a sub-window. Trending audio + hashtags
+should target product / tech / SaaS / creator-tools audiences, not the
+audiences of whatever the user is browsing inside the recording.
+
+If frames show a person speaking to camera, a recipe shot top-down, dance
+footage, on-location video, etc. — analyze normally as short-form creator
+content. The screen-recording rule only fires when the screen recording IS
+the video.`
+
+  const userBlock = userContext && userContext.trim().length > 0
+    ? `
+
+USER-SUPPLIED CONTEXT (authoritative — the creator told you what this video is):
+"${userContext.trim().slice(0, 500).replace(/"/g, "'")}"
+
+Treat this as ground truth for what the video is about. If it conflicts with
+what you see in the frames (e.g. user says "my product demo" but you see a
+talking-head video), STILL trust the user — they know their intent better than
+you can infer from frames alone. The category, hook framing, caption rewrites,
+and trending recommendations should all flow from this context.`
+    : ""
+
+  return metaRule + userBlock
+}

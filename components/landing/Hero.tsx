@@ -29,6 +29,10 @@ export function Hero() {
   /** 0–100 during upload, null when idle. Drives the progress bar in
    *  UploadCard so the user sees real movement on slow mobile networks. */
   const [progress, setProgress] = useState<number | null>(null)
+  /** Optional user-supplied framing for what the video IS. Sent to the
+   *  /api/upload/init endpoint and persisted; the analyze route then
+   *  threads it into the Gemini prompt. Empty string = no framing. */
+  const [context, setContext] = useState("")
 
   function handleFile(file: File) {
     setPicked({ kind: "file", file, label: file.name })
@@ -50,6 +54,9 @@ export function Hero() {
           fileName: file.name,
           fileSize: file.size,
           mimeType: file.type,
+          // Only send context when the user actually typed something —
+          // keeps null rows null on the server side.
+          ...(context.trim().length > 0 ? { context: context.trim() } : {}),
         }),
       })
 
@@ -202,6 +209,8 @@ export function Hero() {
             onScore={handleScore}
             busy={busy}
             progress={progress}
+            context={context}
+            onContextChange={setContext}
           />
 
           <div

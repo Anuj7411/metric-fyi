@@ -35,6 +35,10 @@ type Report = {
   file_size: number
   analysis: unknown
   error_message: string | null
+  /** Optional user-supplied framing for what the video IS. Threaded
+   *  through to the Gemini prompt so screen recordings don't get
+   *  analyzed as whatever app the user happens to be viewing. */
+  user_context: string | null
 }
 
 export async function POST(
@@ -129,8 +133,16 @@ export async function POST(
     )
   }
 
-  // 7. Run Gemini
-  const result = await analyzeInline(videoBytes, row.mime_type, apiKey)
+  // 7. Run Gemini — passing user_context lets the prompt know what the
+  //    video is MEANT to be about (solves the screen-recording-as-content
+  //    misclassification: a Loom of "App A viewing content B" should be
+  //    analyzed as App A, not content B).
+  const result = await analyzeInline(
+    videoBytes,
+    row.mime_type,
+    apiKey,
+    row.user_context,
+  )
 
   if (!result.ok) {
     await supabase.rpc("mark_failed", { p_id: id, p_msg: result.error })

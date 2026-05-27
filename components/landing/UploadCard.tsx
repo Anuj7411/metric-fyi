@@ -22,6 +22,12 @@ type Props = {
    *  real-percentage progress bar; falls back to indeterminate shimmer
    *  while busy && progress === null (e.g. before the first chunk lands). */
   progress?: number | null
+  /** Optional user-supplied framing for what the video IS. Threaded to
+   *  the Gemini prompt — solves screen-recording misclassification
+   *  (Loom of an app gets analyzed as the app, not the embedded
+   *  content). Bound externally so Hero can include it in /init body. */
+  context: string
+  onContextChange: (value: string) => void
 }
 
 /**
@@ -40,8 +46,15 @@ export function UploadCard({
   onScore,
   busy = false,
   progress = null,
+  context,
+  onContextChange,
 }: Props) {
   const [dragOver, setDragOver] = useState(false)
+  /** Context input is hidden by default — collapsed under a one-line
+   *  affordance — so the default flow stays "drop and score." Auto-opens
+   *  once a file is picked because that's when intent-tagging matters
+   *  most (and once the user has typed something we keep it open). */
+  const [contextOpen, setContextOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Page-wide drag listeners — dropping anywhere on the page routes here.
@@ -97,8 +110,12 @@ export function UploadCard({
   }
 
   const canScore = pickedLabel.length > 0
+  const showContext = contextOpen || context.length > 0 || canScore
+  const ctxLen = context.length
+  const CTX_MAX = 500
 
   return (
+    <>
     <div
       className="relative flex flex-col md:flex-row md:items-stretch border transition-[border-color] duration-[220ms] ease-[cubic-bezier(.2,.8,.2,1)] overflow-hidden"
       style={{
@@ -216,5 +233,68 @@ export function UploadCard({
         {busy ? "Uploading…" : "Score it →"}
       </Button>
     </div>
+
+    {/* Optional context — what is this video MEANT to be about?
+        Lives outside the main input row so the default flow stays
+        a single line. Auto-opens once a file is picked because that's
+        when the framing question becomes useful. The whole thing is
+        skippable; empty context just means "no extra framing." */}
+    {showContext ? (
+      <div
+        className="mt-2 border"
+        style={{
+          background: "var(--color-ink-2)",
+          borderColor: "var(--color-line)",
+        }}
+      >
+        <label
+          htmlFor="video-context"
+          className="flex items-baseline justify-between gap-3 px-4 md:px-6 pt-3 pb-1.5 font-mono text-[10px]"
+          style={{
+            fontFamily: "var(--font-mono)",
+            color: "var(--color-text-mute)",
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+          }}
+        >
+          <span>
+            What is this video?{" "}
+            <span style={{ opacity: 0.7 }}>(optional, but helps a lot)</span>
+          </span>
+          <span style={{ opacity: ctxLen > CTX_MAX * 0.85 ? 1 : 0.6 }}>
+            {ctxLen}/{CTX_MAX}
+          </span>
+        </label>
+        <textarea
+          id="video-context"
+          value={context}
+          onChange={(e) => onContextChange(e.target.value.slice(0, CTX_MAX))}
+          disabled={busy}
+          rows={2}
+          placeholder='e.g. "screen recording of my SaaS dashboard — analyze the product demo, not the data inside it"'
+          className="w-full resize-none bg-transparent px-4 md:px-6 pb-3 font-mono text-[13px] md:text-[14px] outline-none placeholder:opacity-40"
+          style={{
+            fontFamily: "var(--font-mono)",
+            color: "var(--color-text)",
+            letterSpacing: "-0.005em",
+            lineHeight: 1.45,
+          }}
+        />
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => setContextOpen(true)}
+        className="mt-2 font-mono text-[11px] underline-offset-4 hover:underline transition-opacity"
+        style={{
+          fontFamily: "var(--font-mono)",
+          color: "var(--color-text-mute)",
+          letterSpacing: "0.05em",
+        }}
+      >
+        + add context (e.g. &quot;this is a screen recording of my app&quot;)
+      </button>
+    )}
+    </>
   )
 }

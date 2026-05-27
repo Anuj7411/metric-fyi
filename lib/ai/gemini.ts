@@ -10,7 +10,11 @@
  *   - analyzeViaFiles:  video > 20MB. Upload to Files API, wait for ACTIVE,
  *                       then generateContent. Day 9+ implementation.
  */
-import { SYSTEM_INSTRUCTION, USER_INSTRUCTION } from "./prompt"
+import {
+  SYSTEM_INSTRUCTION,
+  USER_INSTRUCTION,
+  buildContextPrompt,
+} from "./prompt"
 import { ANALYSIS_RESPONSE_SCHEMA, Analysis } from "./schema"
 
 const MODEL = "gemini-flash-latest" // currently → gemini-3-flash-preview (free tier)
@@ -30,6 +34,10 @@ export async function analyzeInline(
   videoBytes: ArrayBuffer | Uint8Array,
   mimeType: string,
   apiKey: string,
+  /** Optional user-supplied framing — e.g. "screen recording of my product
+   *  demo". Always pairs with an always-on meta-content rule that helps
+   *  Gemini detect screen recordings even when no context is supplied. */
+  userContext?: string | null,
 ): Promise<AnalyzeResult> {
   if (videoBytes.byteLength > INLINE_LIMIT) {
     return {
@@ -39,17 +47,20 @@ export async function analyzeInline(
   }
 
   const base64 = bytesToBase64(videoBytes)
+  // Context block: always-on screen-recording rule + optional user-supplied
+  // framing. Slotted in BEFORE the main USER_INSTRUCTION so it primes the
+  // model's understanding of what the video IS before it sees the analysis
+  // task description.
+  const contextText = buildContextPrompt(userContext)
+  const userParts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [
+    { inlineData: { mimeType, data: base64 } },
+  ]
+  if (contextText) userParts.push({ text: contextText })
+  userParts.push({ text: USER_INSTRUCTION })
+
   const body = {
     systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: base64 } },
-          { text: USER_INSTRUCTION },
-        ],
-      },
-    ],
+    contents: [{ role: "user", parts: userParts }],
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: ANALYSIS_RESPONSE_SCHEMA,
@@ -114,6 +125,7 @@ export async function* analyzeStreamingInline(
   videoBytes: Uint8Array,
   mimeType: string,
   apiKey: string,
+  userContext?: string | null,
 ): AsyncGenerator<{ kind: "chunk"; text: string } | { kind: "error"; error: string }, void, unknown> {
   if (videoBytes.byteLength > INLINE_LIMIT) {
     yield { kind: "error", error: "video too large for inline path (>20MB)" }
@@ -121,17 +133,16 @@ export async function* analyzeStreamingInline(
   }
 
   const base64 = bytesToBase64(videoBytes)
+  const contextText = buildContextPrompt(userContext)
+  const userParts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [
+    { inlineData: { mimeType, data: base64 } },
+  ]
+  if (contextText) userParts.push({ text: contextText })
+  userParts.push({ text: USER_INSTRUCTION })
+
   const body = {
     systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data: base64 } },
-          { text: USER_INSTRUCTION },
-        ],
-      },
-    ],
+    contents: [{ role: "user", parts: userParts }],
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: ANALYSIS_RESPONSE_SCHEMA,

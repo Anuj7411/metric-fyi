@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       { status: 400 },
     )
   }
-  const { fileName, fileSize, mimeType } = parsed.data
+  const { fileName, fileSize, mimeType, context } = parsed.data
 
   // 3. Generate id + storage path (storage key === row id, keeps lookups trivial)
   const id = randomUUID()
@@ -72,6 +72,9 @@ export async function POST(req: Request) {
     file_name: fileName,
     file_size: fileSize,
     mime_type: mimeType,
+    // Only set if the user actually typed something — keep null
+    // rows null for cleanliness instead of empty strings.
+    user_context: context && context.length > 0 ? context : null,
   })
 
   if (error) {
